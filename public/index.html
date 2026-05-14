@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Genesis SPOT — Dashboard</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div id="banner-stack" class="banner-stack" aria-live="polite"></div>
+
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">◈</span>
+          <div class="brand-text">
+            <h1>Genesis SPOT</h1>
+            <p class="tagline">CoinEx Spot Bot · ciclos isolados</p>
+          </div>
+        </div>
+        <div class="header-toolbar">
+          <span id="health-pill" class="badge badge-neutral">API…</span>
+          <button type="button" id="btn-refresh" class="btn btn-primary">Atualizar</button>
+          <span class="header-meta">
+            <span class="muted">Última atualização</span>
+            <time id="last-updated-at" class="mono">—</time>
+          </span>
+        </div>
+        <div id="header-status-strip" class="status-strip" aria-label="Estado global">
+          <span class="status-chip"><span class="muted">Motor</span> <strong id="runtime-status-label">—</strong></span>
+          <span class="status-chip"><span class="muted">Modo</span> <strong id="execution-mode-label">—</strong></span>
+          <span class="status-chip"><span class="muted">Camada</span> <strong id="execution-layer-label">—</strong></span>
+          <span class="status-chip"><span class="muted">Mercado</span> <strong id="market-data-source-label">—</strong></span>
+          <span id="enabled-label" class="badge badge-neutral">Ativado</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="site-main">
+      <nav class="tabs" role="tablist" aria-label="Secções do painel">
+        <button type="button" class="tab-btn tab-btn-active" role="tab" aria-selected="true" data-tab="overview">Visão geral</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="operation">Operação</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="market">Mercado &amp; saldo</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="fullauto">Full Auto LIVE</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="params">Parâmetros</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="cycles">Ciclos &amp; ordens</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="reconc">Reconciliação</button>
+        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="events">Eventos</button>
+      </nav>
+
+      <!-- Visão geral -->
+      <section id="tab-overview" class="tab-panel tab-panel-active" role="tabpanel">
+        <div id="overview-cards" class="grid-cards"></div>
+      </section>
+
+      <!-- Operação -->
+      <section id="tab-operation" class="tab-panel" role="tabpanel" hidden>
+        <div class="panel panel-controls">
+          <h2 class="panel-title">Controlo operacional</h2>
+          <p class="panel-lead muted">
+            Estado em Postgres: <code>runtime_status</code> e <code>execution_mode</code>.
+          </p>
+          <div class="alert alert-warn">
+            <strong>Kill switch</strong> não cancela automaticamente ordens abertas na CoinEx, salvo rotas específicas que o façam.
+          </div>
+          <div class="mode-line">
+            <span class="muted">Bot</span>
+            <span id="op-runtime-label" class="mono">—</span>
+            <span class="muted">Execução</span>
+            <span id="op-exec-label" class="mono">—</span>
+            <span id="op-enabled-badge" class="badge badge-neutral">—</span>
+          </div>
+          <div class="btn-grid btn-grid-op">
+            <button type="button" class="btn" data-action="start-dry">Iniciar Dry Run</button>
+            <button type="button" class="btn btn-live" data-action="mode-live">Modo LIVE</button>
+            <button type="button" class="btn" data-action="pause-buys">Pausar compras</button>
+            <button type="button" class="btn" data-action="sell-only">Só vendas</button>
+            <button type="button" class="btn" data-action="stop">Desligar (OFF)</button>
+            <button type="button" class="btn btn-kill" data-action="kill">Kill switch</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mercado & saldo -->
+      <section id="tab-market" class="tab-panel" role="tabpanel" hidden>
+        <div class="two-col">
+          <div class="panel">
+            <h2 class="panel-title">Mercado</h2>
+            <div id="market-live-summary" class="market-block" aria-live="polite"></div>
+            <p id="ticker-updated" class="muted small market-updated">—</p>
+            <div id="market-spec-card" class="market-spec-block muted" aria-live="polite"></div>
+          </div>
+          <div class="panel">
+            <h2 class="panel-title">Saldos</h2>
+            <p id="portfolio-balance-notice" class="alert alert-info balance-motor-notice">—</p>
+            <div class="balance-grid">
+              <div class="balance-card">
+                <h3 class="balance-title">Simulado</h3>
+                <p class="muted tiny">Saldo simulado do motor (quote interna em USDT)</p>
+                <dl class="bal-dl">
+                  <dt id="bal-sim-quote-lbl">USDT (sim.)</dt>
+                  <dd id="bal-sim-usdt" class="mono">—</dd>
+                  <dt id="bal-sim-base-lbl">BTC</dt>
+                  <dd id="bal-sim-btc" class="mono">—</dd>
+                </dl>
+              </div>
+              <div id="coinex-balance-block" class="balance-card balance-card-coinex" hidden>
+                <h3 class="balance-title">CoinEx (só leitura)</h3>
+                <p id="bal-ex-status" class="tiny">—</p>
+                <dl class="bal-dl">
+                  <dt id="bal-ex-quote-lbl">Quote</dt>
+                  <dd id="bal-ex-usdt" class="mono">—</dd>
+                  <dt id="bal-ex-base-lbl">Base</dt>
+                  <dd id="bal-ex-btc" class="mono">—</dd>
+                </dl>
+              </div>
+            </div>
+            <ul class="muted small list-tight">
+              <li>Em <strong>DRY_RUN</strong> o motor usa saldo <strong>simulado</strong>. Saldo CoinEx é só leitura.</li>
+              <li>Em <strong>LIVE</strong> com layer LIVE, o motor usa saldo <strong>real</strong> na CoinEx para ordens reais.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Full Auto LIVE -->
+      <section id="tab-fullauto" class="tab-panel" role="tabpanel" hidden>
+        <div id="full-auto-card" class="panel panel-fullauto">
+          <h2 class="panel-title">FULL AUTO LIVE — Fase 1.7</h2>
+          <div class="alert alert-danger">
+            <strong>FULL AUTO</strong> pode abrir ordens reais <strong>LIMIT</strong> na CoinEx. <code>ENABLE_AUTO_LIVE_WORKER</code> só no <code>.env</code>.
+          </div>
+          <p class="muted small" style="margin-bottom: 12px">
+            <strong>Regra simples (ordem isolada por ciclo):</strong> sem BTC na carteira, o worker coloca
+            <strong>uma compra LIMIT</strong> a <strong>passo da grelha</strong> % abaixo do <strong>último preço</strong> (ex. 2% →
+            <code>0.02</code> nos Parâmetros). Quando essa compra executa, coloca <strong>uma venda LIMIT</strong> com
+            <strong>lucro-alvo</strong> % (mais margem de taxas) acima da média dessa compra. Fechou a venda → começa outro ciclo.
+          </p>
+          <div class="btn-row">
+            <button type="button" id="btn-reset-live-circuit" class="btn">Repor circuit breaker</button>
+          </div>
+          <div id="live-cycle-auto-summary" class="fullauto-body" aria-live="polite">—</div>
+        </div>
+      </section>
+
+      <!-- Parâmetros -->
+      <section id="tab-params" class="tab-panel" role="tabpanel" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Parâmetros do bot</h2>
+            <div class="btn-row">
+              <button type="button" id="btn-edit-config" class="btn">Editar configuração</button>
+              <button type="button" id="btn-save-config" class="btn btn-primary" hidden>Salvar</button>
+              <button type="button" id="btn-cancel-config" class="btn" hidden>Cancelar</button>
+            </div>
+          </div>
+          <p class="muted small">
+            Postgres: estratégia e risco; o <strong>Full Auto LIVE</strong> lê daqui. Percentagens são
+            <strong>frações</strong>: <code>0.02</code> = 2% (também podes gravar <code>2</code> ao salvar).
+            <strong>Passo da grelha</strong> = distância da compra LIMIT abaixo do último preço.
+            <strong>Lucro-alvo</strong> = bump de preço na venda sobre a média da compra (mais margem de taxas).
+          </p>
+          <div id="bot-params-view" class="params-sections muted">Carregando…</div>
+          <form id="bot-params-form" class="config-form" hidden></form>
+        </div>
+      </section>
+
+      <!-- Ciclos & ordens -->
+      <section id="tab-cycles" class="tab-panel" role="tabpanel" hidden>
+        <div class="two-col two-col-stack">
+          <div class="panel">
+            <h2 class="panel-title">Últimos ciclos</h2>
+            <div class="table-responsive">
+              <table class="data-table data-table-cycles">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Mercado</th>
+                    <th>Entrada</th>
+                    <th>Alvo</th>
+                    <th>Quote</th>
+                    <th>Base</th>
+                    <th>Aberto</th>
+                  </tr>
+                </thead>
+                <tbody id="cycles-body">
+                  <tr>
+                    <td colspan="7" class="muted">Carregando…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <h2 class="panel-title">Últimas ordens</h2>
+            <div class="table-responsive">
+              <table class="data-table data-table-orders">
+                <thead>
+                  <tr>
+                    <th>Lado</th>
+                    <th>Status</th>
+                    <th>Preço</th>
+                    <th>Qtd</th>
+                    <th>Preenchido</th>
+                    <th>Client ID</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-body">
+                  <tr>
+                    <td colspan="6" class="muted">Carregando…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Reconciliação -->
+      <section id="tab-reconc" class="tab-panel" role="tabpanel" hidden>
+        <div class="panel">
+          <h2 class="panel-title">Reconciliação LIVE</h2>
+          <p class="muted small">
+            Worker: <code>order-status</code> + <code>user-deals</code> · intervalo <code>BOT_RECONCILIATION_INTERVAL_MS</code>
+          </p>
+          <div id="reconc-warning" class="alert alert-warn" hidden>Reconciliador ainda não saudável — aguardar ticks ou verificar chaves/rede.</div>
+          <div id="reconc-live-summary" class="reconc-grid muted">—</div>
+        </div>
+      </section>
+
+      <!-- Eventos -->
+      <section id="tab-events" class="tab-panel" role="tabpanel" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Eventos operacionais</h2>
+            <label class="filter-label muted small">
+              Filtrar
+              <select id="events-filter" class="select-filter">
+                <option value="all">Todos</option>
+                <option value="error">Erros</option>
+                <option value="live">LIVE</option>
+                <option value="cycle">Ciclos</option>
+              </select>
+            </label>
+          </div>
+          <ul id="events-list" class="events-list muted"></ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>API: <code id="api-base" class="mono"></code></span>
+      <span id="toast" class="toast muted" aria-live="polite"></span>
+      <span class="muted">Não é recomendação financeira.</span>
+    </footer>
+
+    <script src="/assets/dashboard.js" type="module"></script>
+  </body>
+</html>

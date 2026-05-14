@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CycleStatus {
+  WAITING_BUY_SIGNAL
+  BUY_PLACED
+  BUY_PARTIALLY_FILLED
+  BUY_FILLED
+  SELL_PLACED
+  SELL_PARTIALLY_FILLED
+  CLOSED_PROFIT
+  CANCELLED
+  ERROR
+  MANUAL_REVIEW
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  LIMIT
+  MARKET
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  CANCELLED
+  REJECTED
+  EXPIRED
+  UNKNOWN
+}
+
+enum BotRuntimeStatus {
+  OFF
+  RUNNING
+  PAUSED_BUYS
+  SELL_ONLY
+  KILL_SWITCH
+}
+
+enum BotExecutionMode {
+  DRY_RUN
+  LIVE
+}
+
+model BotConfig {
+  id                  String   @id @default(uuid()) @db.Uuid
+  market              String   @default("BTCUSDC")
+  quoteCurrency       String   @default("USDC") @map("quote_currency")
+  baseCurrency        String   @default("BTC") @map("base_currency")
+  enabled             Boolean  @default(false)
+  runtimeStatus       BotRuntimeStatus @default(OFF) @map("runtime_status")
+  executionMode       BotExecutionMode @default(DRY_RUN) @map("execution_mode")
+
+  orderQuoteSize      Decimal  @map("order_quote_size") @db.Decimal(30, 12)
+  targetProfitPct     Decimal  @map("target_profit_pct") @db.Decimal(18, 10)
+  gridStepPct         Decimal  @map("grid_step_pct") @db.Decimal(18, 10)
+
+  maxOpenCycles       Int      @map("max_open_cycles")
+  maxQuoteAllocation  Decimal  @map("max_quote_allocation") @db.Decimal(30, 12)
+  minQuoteBalance     Decimal  @map("min_quote_balance") @db.Decimal(30, 12)
+
+  feeBufferPct        Decimal  @default("0.002") @map("fee_buffer_pct") @db.Decimal(18, 10)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("bot_configs")
+}
+
+model TradeCycle {
+  id     String      @id @default(uuid()) @db.Uuid
+  market String
+  status CycleStatus
+
+  /** Ciclo criado pelo Auto LIVE Worker (Fase 1.7); isolado de ciclos simulados. */
+  isLiveAutoWorker Boolean @default(false) @map("is_live_auto_worker")
+
+  entryPrice  Decimal? @map("entry_price") @db.Decimal(30, 12)
+  targetPrice Decimal? @map("target_price") @db.Decimal(30, 12)
+
+  quoteBudget Decimal @map("quote_budget") @db.Decimal(30, 12)
+  quoteSpent  Decimal @default(0) @map("quote_spent") @db.Decimal(30, 12)
+  baseFilled  Decimal @default(0) @map("base_filled") @db.Decimal(30, 12)
+
+  buyFee  Decimal @default(0) @map("buy_fee") @db.Decimal(30, 12)
+  sellFee Decimal @default(0) @map("sell_fee") @db.Decimal(30, 12)
+
+  realizedProfitQuote Decimal? @map("realized_profit_quote") @db.Decimal(30, 12)
+  realizedProfitPct   Decimal? @map("realized_profit_pct") @db.Decimal(18, 10)
+
+  buyOrderId  String? @unique @map("buy_order_id") @db.Uuid
+  sellOrderId String? @unique @map("sell_order_id") @db.Uuid
+
+  buyOrder  Order? @relation("CycleBuyOrder", fields: [buyOrderId], references: [id])
+  sellOrder Order? @relation("CycleSellOrder", fields: [sellOrderId], references: [id])
+
+  orders Order[] @relation("CycleOrders")
+
+  openedAt DateTime? @default(now()) @map("opened_at") @db.Timestamptz(6)
+  closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("trade_cycles")
+}
+
+model Order {
+  id               String      @id @default(uuid()) @db.Uuid
+  cycleId          String?     @map("cycle_id") @db.Uuid
+  cycle            TradeCycle? @relation("CycleOrders", fields: [cycleId], references: [id])
+  buyForCycle      TradeCycle? @relation("CycleBuyOrder")
+  sellForCycle     TradeCycle? @relation("CycleSellOrder")
+
+  exchangeOrderId String? @map("exchange_order_id")
+  clientId        String    @unique @map("client_id")
+
+  market String
+  side   OrderSide
+  type   OrderType
+  status OrderStatus
+
+  price  Decimal? @db.Decimal(30, 12)
+  amount Decimal  @db.Decimal(30, 12)
+
+  filledAmount Decimal @default(0) @map("filled_amount") @db.Decimal(30, 12)
+  filledValue  Decimal @default(0) @map("filled_value") @db.Decimal(30, 12)
+  fee            Decimal @default(0) @db.Decimal(30, 12)
+  feeCurrency    String? @map("fee_currency")
+
+  rawResponse Json? @map("raw_response") @db.JsonB
+
+  fills OrderFill[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([cycleId])
+  @@index([exchangeOrderId])
+  @@map("orders")
+}
+
+model OrderFill {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  exchangeDealId String? @unique @map("exchange_deal_id")
+  price          Decimal @db.Decimal(30, 12)
+  amount         Decimal @db.Decimal(30, 12)
+  value          Decimal @db.Decimal(30, 12)
+  fee            Decimal @db.Decimal(30, 12)
+  feeCurrency    String  @map("fee_currency")
+
+  executedAt DateTime @map("executed_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orderId])
+  @@map("order_fills")
+}
+
+model BotEvent {
+  id      String   @id @default(uuid()) @db.Uuid
+  level   String
+  type    String
+  message String
+  context Json?    @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@map("bot_events")
+}
