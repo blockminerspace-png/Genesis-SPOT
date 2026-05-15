@@ -46,10 +46,6 @@ export async function runStartupLiveOpenSellReview(env: Env, log: FastifyBaseLog
     return;
   }
 
-  if (env.MARKET_DATA_SOURCE !== "COINEX") {
-    return;
-  }
-
   const cfg = await rt.getBotConfigRow();
   const market = cfg.market.toUpperCase();
 

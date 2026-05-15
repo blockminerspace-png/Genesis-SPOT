@@ -51,7 +51,6 @@ enum BotRuntimeStatus {
 }
 
 enum BotExecutionMode {
-  DRY_RUN
   LIVE
 }
 
@@ -62,7 +61,7 @@ model BotConfig {
   baseCurrency        String   @default("BTC") @map("base_currency")
   enabled             Boolean  @default(false)
   runtimeStatus       BotRuntimeStatus @default(OFF) @map("runtime_status")
-  executionMode       BotExecutionMode @default(DRY_RUN) @map("execution_mode")
+  executionMode       BotExecutionMode @default(LIVE) @map("execution_mode")
 
   orderQuoteSize      Decimal  @map("order_quote_size") @db.Decimal(30, 12)
   targetProfitPct     Decimal  @map("target_profit_pct") @db.Decimal(18, 10)
@@ -181,4 +180,31 @@ model BotEvent {
 
   @@index([createdAt])
   @@map("bot_events")
+}
+
+/** Desafio 2FA por email (código de uso único, hash armazenado). */
+model DashboardOtpChallenge {
+  id          String    @id @default(uuid()) @db.Uuid
+  emailNorm   String    @map("email_norm")
+  codeHash    String    @map("code_hash")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  otpAttempts Int       @default(0) @map("otp_attempts")
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([emailNorm, createdAt])
+  @@map("dashboard_otp_challenges")
+}
+
+/** Anti força bruta na palavra-passe (por email normalizado + IP). */
+model DashboardPasswordThrottle {
+  id          String    @id @default(uuid()) @db.Uuid
+  emailNorm   String    @map("email_norm")
+  ip          String
+  failCount   Int       @default(0) @map("fail_count")
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([emailNorm, ip])
+  @@map("dashboard_password_throttle")
 }

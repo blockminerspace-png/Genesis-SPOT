@@ -8,6 +8,10 @@ export function floorBaseAmount(amount: D, spec: MarketSpec): D {
   return amount.toDecimalPlaces(spec.basePrecision, Decimal.ROUND_FLOOR);
 }
 
+export function ceilBaseAmount(amount: D, spec: MarketSpec): D {
+  return amount.toDecimalPlaces(spec.basePrecision, Decimal.ROUND_CEIL);
+}
+
 export function floorQuoteValue(value: D, spec: MarketSpec): D {
   return value.toDecimalPlaces(spec.quotePrecision, Decimal.ROUND_FLOOR);
 }

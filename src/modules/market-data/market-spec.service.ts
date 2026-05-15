@@ -74,12 +74,6 @@ export class MarketSpecService {
     const cached = this.store.get(key);
     if (cached) return { spec: cached.spec, fetchedAtMs: cached.fetchedAtMs };
 
-    if (this.env.MARKET_DATA_SOURCE !== "COINEX") {
-      const spec = buildStaticFallbackSpec(key);
-      this.store.set(key, spec, this.env.MARKET_SPEC_CACHE_TTL_MS);
-      return this.store.get(key)!;
-    }
-
     try {
       const spec = await this.coinex.fetch(key);
       this.store.set(key, spec, this.env.MARKET_SPEC_CACHE_TTL_MS);

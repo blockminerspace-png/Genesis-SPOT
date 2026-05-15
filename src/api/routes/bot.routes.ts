@@ -50,21 +50,18 @@ export async function botRoutes(app: FastifyInstance, env: Env) {
     if (!parsed.success) {
       return reply.code(400).send({ error: "payload inválido", details: parsed.error.flatten() });
     }
-    const mode = parsed.data.mode;
-    if (mode === "LIVE") {
-      if (!env.ENABLE_LIVE_TRADING) {
-        await appendBotEvent("WARN", "LIVE_BLOCKED_ENV", "POST /bot/start LIVE com ENABLE_LIVE_TRADING=false", {});
-        return reply.code(400).send({ error: "ENABLE_LIVE_TRADING=false no .env" });
-      }
+    if (!env.ENABLE_LIVE_TRADING) {
+      await appendBotEvent("WARN", "LIVE_BLOCKED_ENV", "POST /bot/start com ENABLE_LIVE_TRADING=false", {});
+      return reply.code(400).send({ error: "ENABLE_LIVE_TRADING=false no .env" });
     }
-    if (mode === "LIVE" && (!env.COINEX_ACCESS_ID || !env.COINEX_SECRET_KEY)) {
-      await appendBotEvent("WARN", "LIVE_BLOCKED_MISSING_KEYS", "POST /bot/start LIVE sem chaves CoinEx", {});
+    if (!env.COINEX_ACCESS_ID || !env.COINEX_SECRET_KEY) {
+      await appendBotEvent("WARN", "LIVE_BLOCKED_MISSING_KEYS", "POST /bot/start sem chaves CoinEx", {});
       return reply
         .code(400)
         .send({ error: "LIVE exige COINEX_ACCESS_ID e COINEX_SECRET_KEY no .env" });
     }
     const row = await updateBotRuntimeState(
-      { runtimeStatus: "RUNNING", executionMode: mode },
+      { runtimeStatus: "RUNNING", executionMode: "LIVE" },
       { via: "POST /bot/start" },
     );
     return reply.send({
@@ -93,16 +90,6 @@ export async function botRoutes(app: FastifyInstance, env: Env) {
         note: "Cancelamento CoinEx ainda não implementado nesta fase.",
       },
     );
-    return reply.send({
-      ok: true,
-      runtimeStatus: row?.runtimeStatus,
-      executionMode: row?.executionMode,
-      enabled: row?.enabled,
-    });
-  });
-
-  app.post("/mode/dry-run", async (_request, reply) => {
-    const row = await updateBotRuntimeState({ executionMode: "DRY_RUN" }, { via: "POST /bot/mode/dry-run" });
     return reply.send({
       ok: true,
       runtimeStatus: row?.runtimeStatus,

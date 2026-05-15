@@ -15,15 +15,26 @@ const envSchema = z.object({
   COINEX_ACCESS_ID: z.string().optional().default(""),
   COINEX_SECRET_KEY: z.string().optional().default(""),
 
-  MARKET_DATA_SOURCE: z.enum(["SIMULATED", "COINEX"]).default("SIMULATED"),
+  /**
+   * Só CoinEx em runtime. Aceita `SIMULATED` / `BOTH` legados no `.env` e normaliza para `COINEX`
+   * para não rebentar o arranque após remover o simulador.
+   */
+  MARKET_DATA_SOURCE: z
+    .enum(["COINEX", "SIMULATED"])
+    .default("COINEX")
+    .transform((): "COINEX" => "COINEX"),
+
   /** TTL do cache em memória do ticker (CoinEx ou fallback). */
   MARKET_DATA_CACHE_TTL_MS: z.coerce.number().int().min(200).max(60_000).default(2000),
 
   /** TTL do cache em memória do market spec (precisão / mínimos / fees). */
   MARKET_SPEC_CACHE_TTL_MS: z.coerce.number().int().min(5_000).max(3_600_000).default(120_000),
 
-  /** Saldo no painel/API: simulado, CoinEx read-only, ou ambos. O motor em DRY_RUN usa sempre o store simulado. */
-  PORTFOLIO_BALANCE_SOURCE: z.enum(["SIMULATED", "COINEX", "BOTH"]).default("SIMULATED"),
+  /** Saldos: só CoinEx. `BOTH` / `SIMULATED` no `.env` são aceites e tratados como `COINEX`. */
+  PORTFOLIO_BALANCE_SOURCE: z
+    .enum(["COINEX", "BOTH", "SIMULATED"])
+    .default("COINEX")
+    .transform((): "COINEX" => "COINEX"),
   /** Cache do snapshot CoinEx em GET /portfolio/balance. */
   PORTFOLIO_BALANCE_CACHE_TTL_MS: z.coerce.number().int().min(1_000).max(120_000).default(5_000),
 
@@ -35,7 +46,8 @@ const envSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   /** Mercados permitidos para LIVE (CSV, maiúsculas). */
   LIVE_MARKET_ALLOWLIST: z.string().default("BTCUSDC"),
-  LIVE_MAX_ORDER_QUOTE_VALUE: z.coerce.string().default("10"),
+  /** Teto por ordem LIVE (quote). Omissão 50: cobre ~0,0001 BTC a ~80k–500k USDC/BTC + margem. */
+  LIVE_MAX_ORDER_QUOTE_VALUE: z.coerce.string().default("50"),
   LIVE_MAX_DAILY_QUOTE_VOLUME: z.coerce.string().default("50"),
   LIVE_REQUIRE_MAKER_ONLY: z
     .string()
@@ -44,7 +56,11 @@ const envSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   LIVE_BALANCE_MAX_AGE_MS: z.coerce.number().int().min(1_000).max(300_000).default(10_000),
   LIVE_MARKET_DATA_MAX_AGE_MS: z.coerce.number().int().min(500).max(120_000).default(5_000),
-  LIVE_MARKET_SPEC_MAX_AGE_MS: z.coerce.number().int().min(5_000).max(3_600_000).default(60_000),
+  /**
+   * Idade máxima do snapshot de spec (mínimos / precisão) para LIVE e Auto LIVE.
+   * Deve ser ≥ `MARKET_SPEC_CACHE_TTL_MS` (omissão 120s), senão o worker fica «Bloqueado» só porque o spec ainda está em cache.
+   */
+  LIVE_MARKET_SPEC_MAX_AGE_MS: z.coerce.number().int().min(5_000).max(3_600_000).default(180_000),
   /** Teto extra para POST /orders/live-test (quote). */
   LIVE_TEST_MAX_QUOTE_VALUE: z.coerce.string().default("5"),
 
@@ -90,12 +106,6 @@ const envSchema = z.object({
   /** Ordem LIVE aberta: se `updatedAt` mais velho que isto, reconciliação considerada atrasada. */
   AUTO_LIVE_MAX_ORDER_STALE_MS: z.coerce.number().int().min(10_000).max(600_000).default(45_000),
 
-  DRY_RUN: z
-    .string()
-    .optional()
-    .default("true")
-    .transform((v) => v === "true" || v === "1"),
-
   BOT_MARKET: z.string().default("BTCUSDC"),
   BOT_ENABLED: z
     .string()
@@ -114,6 +124,60 @@ const envSchema = z.object({
   BOT_FEE_BUFFER_PCT: z.coerce.string().default("0.002"),
   BOT_PRICE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(3000),
   BOT_RECONCILIATION_INTERVAL_MS: z.coerce.number().int().positive().default(10000),
+
+  /**
+   * Protege todas as rotas JSON do dashboard (exceto `/health` e `/auth/*`) com JWT + 2FA por email.
+   * Requer `DASHBOARD_JWT_SECRET`, `DASHBOARD_USERS`, SMTP e migração Prisma `dashboard_*`.
+   */
+  DASHBOARD_AUTH_ENABLED: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
+  /** Mínimo 32 caracteres quando `DASHBOARD_AUTH_ENABLED`. */
+  DASHBOARD_JWT_SECRET: z.string().default(""),
+  /** Ex.: `8h`, `15m` (jsonwebtoken expiresIn). */
+  DASHBOARD_JWT_EXPIRES_IN: z.string().min(1).default("8h"),
+  /** Cookie httpOnly com o JWT (não enviar token no JSON nem em sessionStorage). */
+  DASHBOARD_SESSION_COOKIE_NAME: z.string().min(2).max(64).default("genesis_spot_session"),
+  /**
+   * Utilizadores locais: `email:senha|outro@dominio:senha2` (o primeiro `:` separa email da senha).
+   * Senhas em texto no `.env` — protege o ficheiro e o acesso ao host.
+   */
+  DASHBOARD_USERS: z.string().default(""),
+
+  DASHBOARD_OTP_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+  DASHBOARD_OTP_MAX_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
+  DASHBOARD_PASSWORD_MAX_FAILS: z.coerce.number().int().min(3).max(30).default(5),
+  DASHBOARD_LOCKOUT_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(30),
+
+  /** Rejeita chamadas à API com `Sec-Fetch-Dest: document` (abrir `/bot/...` diretamente no browser). */
+  DASHBOARD_BLOCK_DOCUMENT_NAV: z
+    .string()
+    .optional()
+    .default("true")
+    .transform((v) => v === "true" || v === "1"),
+
+  DASHBOARD_AUTH_RATE_MAX: z.coerce.number().int().min(5).max(500).default(40),
+  DASHBOARD_AUTH_RATE_WINDOW_MS: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
+
+  SMTP_HOST: z.string().default(""),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_SECURE: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
+  SMTP_USER: z.string().default(""),
+  SMTP_PASS: z.string().default(""),
+  SMTP_FROM: z.string().default(""),
+  DASHBOARD_2FA_EMAIL_SUBJECT: z.string().min(1).default("Genesis SPOT — código de acesso"),
+  /**
+   * Opcional: para onde enviar o código 2FA por utilizador de login.
+   * Formato `loginNorm:emailDestino|...` (loginNorm = mesmo texto que em DASHBOARD_USERS antes do `:`, em minúsculas).
+   * Ex.: `jamanta:gustavo.empresarial.br@gmail.com` — SMTP continua a ser o da Hostinger; só o campo `To` muda.
+   */
+  DASHBOARD_2FA_DELIVER_MAP: z.string().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -125,5 +189,24 @@ export function loadEnv(overrides: Record<string, string | undefined> = {}): Env
     const msg = parsed.error.flatten().fieldErrors;
     throw new Error(`Invalid environment: ${JSON.stringify(msg)}`);
   }
-  return parsed.data;
+  const data = parsed.data;
+  if (data.DASHBOARD_AUTH_ENABLED) {
+    if (data.DASHBOARD_JWT_SECRET.length < 32) {
+      throw new Error("DASHBOARD_AUTH_ENABLED exige DASHBOARD_JWT_SECRET com pelo menos 32 caracteres.");
+    }
+    const hasUser = data.DASHBOARD_USERS.split("|").some((s) => s.includes(":") && s.trim().length > 3);
+    if (!hasUser) {
+      throw new Error("DASHBOARD_AUTH_ENABLED exige DASHBOARD_USERS (formato email:senha|...).");
+    }
+    const smtpConsole = data.SMTP_HOST.trim().toLowerCase() === "console";
+    if (!smtpConsole && (!data.SMTP_HOST.trim() || !data.SMTP_FROM.trim())) {
+      throw new Error(
+        "DASHBOARD_AUTH_ENABLED exige SMTP_HOST e SMTP_FROM para enviar o código 2FA, ou SMTP_HOST=console para imprimir o código nos logs (só desenvolvimento).",
+      );
+    }
+    if (smtpConsole && !data.SMTP_FROM.trim()) {
+      throw new Error("Com SMTP_HOST=console define SMTP_FROM (ex.: noreply@local) para metadados nos logs.");
+    }
+  }
+  return data;
 }

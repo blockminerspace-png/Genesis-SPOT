@@ -11,11 +11,12 @@ import { getMarketDataService } from "../market-data/market-data.service.js";
 import { getMarketSpecService } from "../market-data/market-spec.service.js";
 import { getLiveReconciliationSummary } from "../reconciliation/live-order-reconciliation.worker.js";
 import { runLivePlacePrecheck } from "../orders/live-safety/live-safety.guard.js";
-import { btcAmountForQuoteSpend, gridBuyLimitBelowLast, targetSellFromEntry } from "../strategy/grid.strategy.js";
+import { btcAmountForQuoteSpend, liveAutoBuyBaseAmountExchangeMinimums, liveAutoBuyQuoteCap, targetSellFromEntry } from "../strategy/grid.strategy.js";
 import { validateOrderAgainstMarketSpec, canOpenAnotherCycle, hasMinQuoteBalance } from "../risk/risk-manager.js";
 import { floorBaseAmount, floorPrice } from "../market-data/market-spec.rounding.js";
 import type { MarketSpec } from "../market-data/market-spec.types.js";
-import { getSpotBalancesForLiveGuard } from "../orders/live-coinex-balance-snapshot.js";
+import { OrderRejectedMinAmountError, OrderRejectedMinValueError } from "../market-data/market-spec.types.js";
+import { getSpotBalancesForLiveGuard, invalidateLiveBalanceCache } from "../orders/live-coinex-balance-snapshot.js";
 import {
   getLiveCycleSummary,
   isLiveCycleCircuitOpen,
@@ -29,6 +30,7 @@ import {
 } from "./live-cycle-state.js";
 import type { LiveCycleSummary } from "./live-cycle.types.js";
 import { AUTO_LIVE_CONFIRM_REQUIRED_PHRASE } from "./live-cycle.constants.js";
+import { computeLiveAutoSellTargetPrice } from "./live-sell-target.util.js";
 
 function summarizeBlockedChecks(checks: LiveCycleSummary["checks"], fallback: string): string {
   const bad = checks.filter((c) => !c.ok);
@@ -98,6 +100,32 @@ async function countLiveAutoActive(market: string): Promise<number> {
       status: { notIn: TERMINAL },
     },
   });
+}
+
+/** Ciclos já comprados antes de gravarmos `targetPrice` no painel — preenche alvo indicativo (mesma fórmula que a venda). */
+async function backfillMissingSellTargetsForUi(market: string): Promise<void> {
+  const rows = await prisma.tradeCycle.findMany({
+    where: {
+      isLiveAutoWorker: true,
+      market: market.toUpperCase(),
+      status: { in: [CycleStatus.BUY_FILLED, CycleStatus.BUY_PARTIALLY_FILLED] },
+      sellOrderId: null,
+      entryPrice: { not: null },
+      targetPrice: null,
+    },
+    select: { id: true, entryPrice: true, market: true },
+    take: 10,
+  });
+  for (const r of rows) {
+    const ep = r.entryPrice?.toString();
+    if (!ep) continue;
+    const target = await computeLiveAutoSellTargetPrice(r.market, ep);
+    if (!target) continue;
+    await prisma.tradeCycle.update({
+      where: { id: r.id },
+      data: { targetPrice: target },
+    });
+  }
 }
 
 async function hasStaleLiveOpenOrders(env: Env): Promise<boolean> {
@@ -392,17 +420,66 @@ async function tryOpenBuyCycle(
   log: FastifyBaseLogger,
   cfg: Awaited<ReturnType<ReturnType<typeof getRuntimeStateService>["getBotConfigRow"]>>,
   market: string,
-): Promise<void> {
+): Promise<boolean> {
   const rt = getRuntimeStateService();
   const ticker = await getMarketDataService().getTickerWithFetchMeta(market);
   const { spec } = await getMarketSpecService().getSpecWithFetchedAt(market);
 
   const last = ticker.snap.last;
-  /** Mesma regra que o simulador: limite de compra a `grid_step_pct` abaixo do último (ex.: 0.05 = 5%). */
-  const limitPx = gridBuyLimitBelowLast(last, cfg.gridStepPct.toString(), spec);
+  /** Compra Auto LIVE: sempre a mercado — referência só para mínimos CoinEx e precheck de saldo. */
+  const refPx = floorPrice(new Decimal(last), spec).toFixed(spec.quotePrecision);
   const quoteBudget = effectiveAutoLiveQuoteBudget(env);
-  const btcAmt = btcAmountForQuoteSpend(quoteBudget, limitPx, spec);
-  validateOrderAgainstMarketSpec(btcAmt, limitPx, spec);
+  let btcAmt: string;
+  try {
+    btcAmt = liveAutoBuyBaseAmountExchangeMinimums(refPx, quoteBudget, spec);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await appendBotEvent("WARN", "LIVE_CYCLE_SIGNAL_REJECTED", msg, { market, phase: "min_base_compose" });
+    return false;
+  }
+  const maxQuoteOverride = liveAutoBuyQuoteCap(quoteBudget, btcAmt, refPx, env.LIVE_MAX_ORDER_QUOTE_VALUE, spec);
+  if (new Decimal(maxQuoteOverride).gt(new Decimal(env.LIVE_MAX_ORDER_QUOTE_VALUE))) {
+    log.info(
+      { market, quoteCap: maxQuoteOverride, liveMaxOrderQuote: env.LIVE_MAX_ORDER_QUOTE_VALUE },
+      "live auto BUY: teto por ordem elevado acima de LIVE_MAX_ORDER_QUOTE_VALUE para cobrir notional do lote mínimo",
+    );
+  }
+  try {
+    validateOrderAgainstMarketSpec(btcAmt, refPx, spec);
+  } catch (err) {
+    const type =
+      err instanceof OrderRejectedMinValueError
+        ? "ORDER_REJECTED_MIN_VALUE"
+        : err instanceof OrderRejectedMinAmountError
+          ? "ORDER_REJECTED_MIN_AMOUNT"
+          : "ORDER_REJECTED_MARKET_SPEC";
+    await appendBotEvent("WARN", type, String((err as Error).message), {
+      market,
+      baseAmount: btcAmt,
+      price: refPx,
+      quoteBudget,
+    });
+    await appendBotEvent(
+      "WARN",
+      "LIVE_CYCLE_SIGNAL_REJECTED",
+      "abaixo do mínimo da CoinEx ou notional inválido: ajuste LIVE_MAX_ORDER_QUOTE_VALUE / AUTO_LIVE_ORDER_QUOTE_VALUE.",
+      { market },
+    );
+    return false;
+  }
+
+  if (new Decimal(btcAmt).gt(new Decimal(btcAmountForQuoteSpend(quoteBudget, refPx, spec)))) {
+    await appendBotEvent(
+      "INFO",
+      "LIVE_CYCLE_BUY_BUMPED_TO_MIN_LOT",
+      `quantidade = mínimo CoinEx para o par (min_amount / min_value da API), não o valor só pelo orçamento em quote.`,
+      {
+        market,
+        baseAmount: btcAmt,
+        quoteCap: maxQuoteOverride,
+      },
+    );
+  }
 
   const perms = await rt.getPermissions();
   const pre = await runLivePlacePrecheck(
@@ -413,21 +490,24 @@ async function tryOpenBuyCycle(
       market,
       side: "BUY",
       amount: btcAmt,
-      price: limitPx,
+      price: refPx,
     },
-    { maxQuotePerOrder: quoteBudget },
+    { maxQuotePerOrder: maxQuoteOverride, skipMakerOnlyHint: true },
   );
   if (!pre.valid) {
+    if (pre.checks.some((c) => c.name === "balance_buy_quote" && !c.ok)) {
+      invalidateLiveBalanceCache();
+    }
     await appendBotEvent("WARN", "LIVE_CYCLE_PRECHECK_FAILED", pre.error ?? "precheck buy", {
       checks: pre.checks as unknown as Prisma.InputJsonValue,
     });
-    await appendBotEvent("WARN", "LIVE_CYCLE_SIGNAL_REJECTED", "precheck BUY falhou", {});
-    return;
+    await appendBotEvent("WARN", "LIVE_CYCLE_SIGNAL_REJECTED", pre.error ?? "precheck BUY falhou", {});
+    return false;
   }
 
   if (!perms.canPlaceBuyOrders) {
     await appendBotEvent("WARN", "LIVE_CYCLE_SIGNAL_REJECTED", "runtime não permite compra", {});
-    return;
+    return false;
   }
 
   const blockingStatuses = buyBlockingStatuses(env);
@@ -440,7 +520,7 @@ async function tryOpenBuyCycle(
       data: {
         market,
         status: CycleStatus.WAITING_BUY_SIGNAL,
-        quoteBudget,
+        quoteBudget: maxQuoteOverride,
         quoteSpent: "0",
         baseFilled: "0",
         isLiveAutoWorker: true,
@@ -450,7 +530,7 @@ async function tryOpenBuyCycle(
 
   if (!cycle) {
     await appendBotEvent("WARN", "LIVE_CYCLE_SIGNAL_REJECTED", "race ou ciclo bloqueado ao criar BUY", { market });
-    return;
+    return false;
   }
 
   const buyClient = `LIVE_AUTO_BUY_${cycle.id}`;
@@ -460,35 +540,72 @@ async function tryOpenBuyCycle(
       where: { id: cycle.id },
       data: { buyOrderId: dup.id, status: CycleStatus.BUY_PLACED },
     });
-    return;
+    return true;
   }
 
   await appendBotEvent("INFO", "LIVE_CYCLE_CREATED", `ciclo LIVE auto ${cycle.id}`, { cycleId: cycle.id });
   await appendBotEvent("INFO", "LIVE_CYCLE_SIGNAL_CREATED", "sinal BUY Auto LIVE aceito", { cycleId: cycle.id, market });
-  await appendBotEvent("INFO", "LIVE_CYCLE_BUY_PLACING", `BUY limit ciclo ${cycle.id}`, { cycleId: cycle.id });
+  await appendBotEvent("INFO", "LIVE_CYCLE_BUY_PLACING", `BUY mercado ciclo ${cycle.id}`, { cycleId: cycle.id });
 
   try {
-    const placed = await getOrderManager().placeLimitOrder({
+    const placed = await getOrderManager().placeMarketBuy({
       cycleId: cycle.id,
       market,
-      side: "BUY",
-      amount: pre.flooredAmount,
-      price: pre.flooredPrice,
+      baseAmount: pre.flooredAmount,
+      referencePrice: pre.flooredPrice,
       clientId: buyClient,
-      liveMaxQuoteOverride: quoteBudget,
+      liveMaxQuoteOverride: maxQuoteOverride,
     });
+
+    const orderRow = await prisma.order.findUnique({ where: { id: placed.orderId } });
+    let cycleData: Prisma.TradeCycleUpdateInput = {
+      buyOrder: { connect: { id: placed.orderId } },
+      status: CycleStatus.BUY_PLACED,
+    };
+    if (orderRow?.status === OrderStatus.FILLED && new Decimal(orderRow.filledAmount.toString()).gt(0)) {
+      const fa = orderRow.filledAmount.toString();
+      const fv = orderRow.filledValue.toString();
+      const avgPx = new Decimal(fv).div(new Decimal(fa)).toFixed(12);
+      const avgStr = floorPrice(new Decimal(avgPx), spec).toFixed(spec.quotePrecision);
+      const targetPrice = targetSellFromEntry(avgStr, cfg.targetProfitPct.toString(), cfg.feeBufferPct.toString(), spec);
+      cycleData = {
+        buyOrder: { connect: { id: placed.orderId } },
+        status: CycleStatus.BUY_FILLED,
+        entryPrice: avgPx,
+        quoteSpent: fv,
+        baseFilled: fa,
+        targetPrice,
+      };
+      await appendBotEvent("INFO", "LIVE_CYCLE_BUY_FILLED_DETECTED", `compra mercado filled; preparar venda ${cycle.id}`, {
+        cycleId: cycle.id,
+      });
+    } else if (orderRow?.status === OrderStatus.PARTIALLY_FILLED && new Decimal(orderRow.filledAmount.toString()).gt(0)) {
+      const fa = orderRow.filledAmount.toString();
+      const fv = orderRow.filledValue.toString();
+      const avgPx = new Decimal(fv).div(new Decimal(fa)).toFixed(12);
+      const avgStr = floorPrice(new Decimal(avgPx), spec).toFixed(spec.quotePrecision);
+      const targetPrice = targetSellFromEntry(avgStr, cfg.targetProfitPct.toString(), cfg.feeBufferPct.toString(), spec);
+      cycleData = {
+        buyOrder: { connect: { id: placed.orderId } },
+        status: CycleStatus.BUY_PARTIALLY_FILLED,
+        entryPrice: avgPx,
+        quoteSpent: fv,
+        baseFilled: fa,
+        targetPrice,
+      };
+    }
+
     await prisma.tradeCycle.update({
       where: { id: cycle.id },
-      data: {
-        buyOrderId: placed.orderId,
-        status: CycleStatus.BUY_PLACED,
-      },
+      data: cycleData,
     });
-    await appendBotEvent("INFO", "LIVE_CYCLE_BUY_PLACED", `compra LIVE ${placed.exchangeOrderId}`, {
-      cycleId: cycle.id,
-      orderId: placed.orderId,
-    });
+    const placedMsg =
+      orderRow?.status === OrderStatus.FILLED
+        ? `compra LIVE mercado executada ${placed.exchangeOrderId}`
+        : `compra LIVE mercado ${placed.exchangeOrderId}`;
+    await appendBotEvent("INFO", "LIVE_CYCLE_BUY_PLACED", placedMsg, { cycleId: cycle.id, orderId: placed.orderId });
     log.info({ cycleId: cycle.id, orderId: placed.orderId }, "live auto buy placed");
+    return true;
   } catch (e) {
     const msg = String((e as Error).message);
     await appendBotEvent("ERROR", "LIVE_CYCLE_ERROR", msg, { cycleId: cycle.id, phase: "buy" });
@@ -497,6 +614,7 @@ async function tryOpenBuyCycle(
       data: { status: CycleStatus.MANUAL_REVIEW },
     });
     await appendBotEvent("WARN", "LIVE_CYCLE_MANUAL_REVIEW", `falha BUY LIVE ${cycle.id}`, { cycleId: cycle.id });
+    return false;
   }
 }
 
@@ -557,16 +675,10 @@ export async function runLiveAutoCycleServiceTick(env: Env, log: FastifyBaseLogg
       env.AUTO_LIVE_CONFIRM_ENV === AUTO_LIVE_CONFIRM_REQUIRED_PHRASE,
       env.AUTO_LIVE_CONFIRM_ENV ? "set" : "empty",
     ) && gate;
-    gate = push(
-      "portfolio_balance_coinex",
-      env.PORTFOLIO_BALANCE_SOURCE === "COINEX" || env.PORTFOLIO_BALANCE_SOURCE === "BOTH",
-      env.PORTFOLIO_BALANCE_SOURCE,
-    ) && gate;
     gate = push("runtime_running", perms.runtimeStatus === "RUNNING", perms.runtimeStatus) && gate;
     gate = push("kill_switch_off", perms.runtimeStatus !== "KILL_SWITCH") && gate;
     gate = push("execution_mode_live", perms.executionModeDb === "LIVE", perms.executionModeDb) && gate;
     gate = push("execution_layer_live", perms.executionLayer === "LIVE", perms.executionLayer) && gate;
-    gate = push("market_data_coinex", env.MARKET_DATA_SOURCE === "COINEX") && gate;
     gate = push("coinex_keys", Boolean(env.COINEX_ACCESS_ID && env.COINEX_SECRET_KEY)) && gate;
     const allow = parseLiveMarketAllowlist(env);
     gate = push("live_market_allowlist", allow.includes(autoMarket), autoMarket) && gate;
@@ -701,6 +813,7 @@ export async function runLiveAutoCycleServiceTick(env: Env, log: FastifyBaseLogg
     await handleStuckWaiting(log);
     await emitOutcomeEventsOnce();
 
+    await backfillMissingSellTargetsForUi(autoMarket);
     await tryPlaceSellForCycle(env, log, autoMarket, cfg.targetProfitPct.toString(), cfg.feeBufferPct.toString(), spec);
 
     const blocking = buyBlockingStatuses(env);
@@ -783,13 +896,13 @@ export async function runLiveAutoCycleServiceTick(env: Env, log: FastifyBaseLogg
       return;
     }
 
-    await tryOpenBuyCycle(env, log, cfg, autoMarket);
+    const buyProgressed = await tryOpenBuyCycle(env, log, cfg, autoMarket);
 
     setLiveCycleSummaryPatch({
       status: "RUNNING",
       enabledByEnv: true,
       checks,
-      lastDecision: "opened_or_attempted_buy",
+      lastDecision: buyProgressed ? "opened_or_attempted_buy" : "buy_signal_rejected",
     });
     recordLiveCycleSuccess();
     await finish("RUNNING");

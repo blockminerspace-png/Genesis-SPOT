@@ -5,12 +5,6 @@ export type AssetBalance = {
   total: string;
 };
 
-export type SimulatedBalanceSlice = {
-  source: "SIMULATED";
-  balances: AssetBalance[];
-  updatedAt: string;
-};
-
 export type CoinexBalanceSlice = {
   source: "COINEX";
   available: boolean;
@@ -23,8 +17,5 @@ export type CoinexBalanceSlice = {
 export type PortfolioBalancePayload = {
   executionMode: string;
   portfolioBalanceSource: string;
-  /** Em DRY_RUN o motor continua a usar apenas o store simulado. */
-  motorUsesSimulatedBalance: boolean;
-  simulated: SimulatedBalanceSlice | null;
   coinex: CoinexBalanceSlice | null;
 };

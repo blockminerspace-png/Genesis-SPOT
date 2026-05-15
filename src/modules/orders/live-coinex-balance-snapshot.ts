@@ -7,6 +7,11 @@ type Cache = { balances: AssetBalance[]; fetchedAtMs: number };
 
 let cache: Cache | null = null;
 
+/** Força novo pedido à CoinEx no próximo tick (ex.: após falha de saldo no pré-check). */
+export function invalidateLiveBalanceCache(): void {
+  cache = null;
+}
+
 /** Snapshot spot CoinEx para travas LIVE (independente de PORTFOLIO_BALANCE_SOURCE). */
 export async function getSpotBalancesForLiveGuard(
   env: Env,

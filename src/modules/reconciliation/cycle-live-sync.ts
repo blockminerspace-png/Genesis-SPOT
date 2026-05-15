@@ -45,6 +45,8 @@ export async function syncLinkedCycleForLiveOrder(
     nextOrderStatus: OrderStatus;
     filledAmount: string;
     filledValue: string;
+    /** Alvo de venda (quote) ao marcar compra preenchida; opcional. */
+    sellTargetPrice?: string;
   },
 ): Promise<{ cycleNeedsReview: boolean }> {
   const cycle = await tx.tradeCycle.findUnique({ where: { id: params.cycleId } });
@@ -64,6 +66,7 @@ export async function syncLinkedCycleForLiveOrder(
           entryPrice: avgPx,
           quoteSpent: params.filledValue,
           baseFilled: params.filledAmount,
+          ...(params.sellTargetPrice ? { targetPrice: params.sellTargetPrice } : {}),
         },
       });
       return { cycleNeedsReview: false };
@@ -78,6 +81,7 @@ export async function syncLinkedCycleForLiveOrder(
           entryPrice: avgPx,
           quoteSpent: params.filledValue,
           baseFilled: params.filledAmount,
+          ...(params.sellTargetPrice ? { targetPrice: params.sellTargetPrice } : {}),
         },
       });
       return { cycleNeedsReview: false };

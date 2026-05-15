@@ -6,13 +6,13 @@ export type ProviderTickerResult = {
   coinexRaw?: unknown;
 };
 
-export type MarketTickerSource = "COINEX" | "SIMULATED" | "FORCED" | "COINEX_FALLBACK";
+export type MarketTickerSource = "COINEX";
 
 export type MarketTickerSnapshot = ProviderTickerResult & {
   priceSource: MarketTickerSource;
 };
 
 export interface MarketDataProvider {
-  readonly id: "coinex" | "simulated";
+  readonly id: "coinex";
   fetchTicker(market: string): Promise<ProviderTickerResult>;
 }

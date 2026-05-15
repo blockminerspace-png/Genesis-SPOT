@@ -41,7 +41,7 @@ export class RuntimeStateService {
         executionLayer = "LIVE";
       }
     } else {
-      executionLayer = "SIMULATED";
+      executionLayer = "DISABLED";
     }
 
     const canOperate = executionLayer !== "DISABLED";
@@ -85,11 +85,6 @@ export class RuntimeStateService {
     return (await this.getBotConfigRow()).runtimeStatus === "KILL_SWITCH";
   }
 
-  async isDryRunExecution(): Promise<boolean> {
-    const cfg = await this.getBotConfigRow();
-    return cfg.executionMode === "DRY_RUN";
-  }
-
   async isLiveExecution(): Promise<boolean> {
     return (await this.getBotConfigRow()).executionMode === "LIVE";
   }
@@ -100,10 +95,6 @@ export class RuntimeStateService {
 
   async isSellOnly(): Promise<boolean> {
     return (await this.getBotConfigRow()).runtimeStatus === "SELL_ONLY";
-  }
-
-  mustUseSimulatedExecution(p: RuntimePermission): boolean {
-    return p.executionLayer === "SIMULATED";
   }
 
   mustUseLiveExecution(p: RuntimePermission): boolean {

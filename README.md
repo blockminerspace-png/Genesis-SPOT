@@ -1,6 +1,6 @@
 # Genesis SPOT (até Fase 1.7)
 
-Monólito modular em **Node.js + TypeScript + Fastify + Prisma + PostgreSQL** para um bot **spot** com **ciclos isolados** (desenho técnico; não é recomendação financeira).
+Monólito modular em **Node.js + TypeScript + Fastify + Prisma + PostgreSQL** para um bot **spot** com **ciclos isolados** (desenho técnico; não é recomendação financeira). **Sem simulador:** ticker, spec e saldo vêm da CoinEx; `execution_mode` na base é só **LIVE**.
 
 ## Requisitos
 
@@ -28,13 +28,13 @@ O Postgres define o operacional com **dois campos** em `bot_configs`:
 | Campo | Valores | Função |
 |--------|---------|--------|
 | `runtime_status` | `OFF`, `RUNNING`, `PAUSED_BUYS`, `SELL_ONLY`, `KILL_SWITCH` | O que o bot pode fazer (abrir ciclos, só vendas, etc.) |
-| `execution_mode` | `DRY_RUN`, `LIVE` | Simulação vs CoinEx real |
+| `execution_mode` | `LIVE` | Conta real CoinEx (único valor) |
 
-O **`.env`** só define **capacidades** (ex.: chaves CoinEx). Se `execution_mode = LIVE` e faltarem chaves, a camada efetiva fica **`DISABLED`** (sem enviar ordens reais) e o painel/API podem registar `LIVE_BLOCKED_MISSING_KEYS`. O saldo CoinEx no painel é **read-only** e não substitui o store simulado em `DRY_RUN`.
+O **`.env`** define **capacidades** (ex.: `ENABLE_LIVE_TRADING`, chaves CoinEx). Se o motor está `RUNNING` mas faltam chaves, a camada efetiva fica **`DISABLED`** (sem ordens reais) e o painel pode registar `LIVE_BLOCKED_MISSING_KEYS`.
 
-Serviço central: **`RuntimeStateService`** (`src/modules/runtime/runtime-state.service.ts`) expõe `getPermissions()` e helpers (`canOpenBuyCycle`, `mustUseSimulatedExecution`, etc.).
+**`RuntimeStateService`** (`src/modules/runtime/runtime-state.service.ts`) expõe `getPermissions()` e helpers (`canOpenBuyCycle`, `mustUseLiveExecution`, etc.).
 
-O **modo de execução** (`DRY_RUN` / `LIVE`) fica na **base de dados** (`execution_mode` em `bot_configs`), não numa variável `BOT_EXECUTION_MODE` no `.env`. O `.env` controla sobretudo **fonte de dados de mercado** e chaves.
+O **modo de execução** fica na **base de dados** (`execution_mode` em `bot_configs`), não numa variável `BOT_EXECUTION_MODE` no `.env`.
 
 ## Market data (Fase 1.3)
 
@@ -42,15 +42,14 @@ Variáveis no `.env`:
 
 | Variável | Valores | Efeito |
 |----------|---------|--------|
-| `MARKET_DATA_SOURCE` | `SIMULATED`, `COINEX` | Preço só simulado vs **ticker público** CoinEx (`GET /v2/spot/ticker`) |
-| `MARKET_DATA_CACHE_TTL_MS` | ms (ex.: `2000`) | Cache do último preço CoinEx entre pedidos |
+| `MARKET_DATA_SOURCE` | `COINEX` | Ticker público CoinEx (`GET /v2/spot/ticker`) |
+| `MARKET_DATA_CACHE_TTL_MS` | ms (ex.: `2000`) | Cache do último preço entre pedidos |
 | `MARKET_SPEC_CACHE_TTL_MS` | ms (ex.: `120000`) | Cache do **market spec** (precisão, mínimos, fees) |
 
-- **CoinEx falhou** → fallback para ticker simulado; resposta com `priceSource: COINEX_FALLBACK`.
-- **Preço forçado** na simulação (`POST /simulation/force-price`) → `priceSource: FORCED` (prioridade sobre CoinEx).
+- Se o pedido CoinEx falhar, o ticker devolve erro (sem fallback simulado).
 - Eventos (com throttle): `MARKET_DATA_UPDATED`, `MARKET_DATA_ERROR`.
 
-Módulo: `src/modules/market-data/` (`MarketDataService`, `CoinexMarketDataProvider`, `SimulatedMarketDataProvider`).
+Módulo: `src/modules/market-data/` (`MarketDataService`, `CoinexMarketDataProvider`).
 
 ## Market spec (Fase 1.4)
 
@@ -58,24 +57,21 @@ Módulo: `src/modules/market-data/` (`MarketDataService`, `CoinexMarketDataProvi
 
 | Origem `source` | Quando |
 |-----------------|--------|
-| `COINEX` | `MARKET_DATA_SOURCE=COINEX` e pedido HTTP OK |
-| `STATIC_FALLBACK` | `MARKET_DATA_SOURCE=SIMULATED`, ou CoinEx indisponível (cache curto) |
+| `COINEX` | Pedido HTTP OK à API CoinEx |
+| `STATIC_FALLBACK` | CoinEx indisponível (cache curto) |
 
-Integração: **`SimulatedCycleWorker`** (grid + fills + colocação de venda), **`grid.strategy`**, **`RiskManager.validateOrderAgainstMarketSpec`**, **`SimulatedOrderExecutor`**, **`CoinexOrderExecutor`** (prepara valores com floor antes do stub LIVE).
+Integração: **`grid.strategy`**, **`RiskManager.validateOrderAgainstMarketSpec`**, **`CoinexOrderExecutor`**.
 
 Eventos (throttle onde aplicável): `MARKET_SPEC_UPDATED`, `MARKET_SPEC_ERROR`, `MARKET_API_TRADING_DISABLED`, `ORDER_AMOUNT_FLOORED`, `ORDER_REJECTED_MIN_AMOUNT`, `ORDER_REJECTED_MIN_VALUE`.
-
-Com **`MARKET_DATA_SOURCE=COINEX`** e **`execution_mode=DRY_RUN`**, o bot usa **preço real** e **regras de mercado reais** nas ordens simuladas.
 
 ## Portfolio read-only (Fase 1.5)
 
 | Variável | Valores | Efeito |
 |----------|---------|--------|
-| `PORTFOLIO_BALANCE_SOURCE` | `SIMULATED`, `COINEX`, `BOTH` | O que o `GET /portfolio/balance` expõe: só simulado, só CoinEx (assinado), ou ambos |
-| `PORTFOLIO_BALANCE_CACHE_TTL_MS` | ms (ex.: `5000`) | Cache em memória do snapshot CoinEx entre pedidos à API |
+| `PORTFOLIO_BALANCE_SOURCE` | `COINEX` | `GET /portfolio/balance` expõe snapshot CoinEx (assinado) |
+| `PORTFOLIO_BALANCE_CACHE_TTL_MS` | ms (ex.: `5000`) | Cache em memória do snapshot entre pedidos à API |
 
-- **`execution_mode = DRY_RUN`**: o **motor** (ciclos, `hasMinQuoteBalance`, fills) continua a usar **apenas** o store simulado — nunca o saldo CoinEx para decisões.
-- **Sem chaves** ou erro HTTP: secção `coinex` com `available: false` e mensagem; o painel não quebra.
+- **Sem chaves** ou erro HTTP: `coinex` com `available: false` e mensagem; o painel não quebra.
 - Eventos (throttle): `BALANCE_UPDATED`, `BALANCE_ERROR`, `BALANCE_SOURCE_UNAVAILABLE`, `COINEX_BALANCE_AUTH_FAILED`.
 
 Módulo: `src/modules/portfolio/` + assinatura v2 em `src/infrastructure/coinex/coinex-v2-sign.ts` (`GET /v2/assets/spot/balance`).
@@ -96,13 +92,13 @@ Variáveis principais: `ENABLE_LIVE_TRADING`, `LIVE_MARKET_ALLOWLIST` (CSV), `LI
 **`CoinexOrderExecutor`**: `POST /v2/spot/order` (JSON assinado), grava `exchange_order_id` + `raw_response`, cancel `POST /v2/spot/cancel-order`, eventos `LIVE_ORDER_*`.
 
 - **`POST /bot/mode/live`** — corpo `{ "confirm": "ENABLE_LIVE_TRADING" }` + `ENABLE_LIVE_TRADING=true` + chaves.
-- **`POST /bot/start`** com `"mode":"LIVE"` — mesmo `confirm` + `ENABLE_LIVE_TRADING`.
+- **`POST /bot/start`** — corpo `{ "confirm": "ENABLE_LIVE_TRADING" }` + `ENABLE_LIVE_TRADING=true` + chaves.
 - **`POST /orders/preview`** — validação sem enviar ordem.
 - **`POST /orders/live-test`** — ordem real manual com teto `min(LIVE_MAX_ORDER_QUOTE_VALUE, LIVE_TEST_MAX_QUOTE_VALUE)` e `"confirm":"LIVE_TEST_ORDER"`.
 
 ### Prática real ~1 USDT (`/live-practice`)
 
-Fluxo **manual** para LIMIT BUY/SELL na CoinEx com teto em quote definido por `LIVE_PRACTICE_QUOTE_VALUE` (por omissão `1` USDT), **sem** ativar `ENABLE_AUTO_LIVE_WORKER`. O worker de ciclos simulado e o `DRY_RUN` **não são alterados**; o saldo simulado **não** é misturado com o saldo real nas decisões deste fluxo (usa `LiveSafetyGuard` + snapshot CoinEx como nas outras rotas LIVE).
+Fluxo **manual** para LIMIT BUY/SELL na CoinEx com teto em quote definido por `LIVE_PRACTICE_QUOTE_VALUE` (por omissão `1` USDT), **sem** ativar `ENABLE_AUTO_LIVE_WORKER`. Usa `LiveSafetyGuard` + snapshot CoinEx como as outras rotas LIVE.
 
 | Variável | Função |
 |----------|--------|
@@ -153,7 +149,7 @@ curl -X POST http://localhost:3000/live-practice/cancel-open \
   -d '{"confirm":"I_UNDERSTAND_THIS_IS_REAL_MONEY"}'
 ```
 
-O **worker de ciclos** continua **só em `execution_layer === SIMULATED`** (sem abrir LIVE automático).
+Não existe worker de ciclos simulado; o **Auto LIVE** (`ENABLE_AUTO_LIVE_WORKER`) é o fluxo automático de ciclos reais.
 
 ## Reconciliação LIVE (Fase 1.6.6)
 
@@ -245,7 +241,7 @@ Erros **inesperados** no tick incrementam `consecutiveErrors`; ao atingir `AUTO_
 
 ## Interface
 
-**http://localhost:3000** — painel com bloco **Mercado / Preço / Fonte / Execution / Layer**, **card de spec**, **saldo simulado** vs **saldo CoinEx read-only**, **Prática real 1 USDT** (`/live-practice/status` + ações com confirmação), **Reconciliação LIVE (1.6.6)**, **FULL AUTO LIVE (1.7)** (`/live-cycle/summary` + reset de circuito), `runtime_status`, worker de ciclos (8s) só simulado, reconciliador + Auto LIVE em paralelo.
+**http://localhost:3000** — painel com **Mercado / Preço / Fonte / Execution / Layer**, **card de spec**, **saldo CoinEx read-only**, **Prática real 1 USDT** (`/live-practice/status` + ações com confirmação), **Reconciliação LIVE (1.6.6)**, **FULL AUTO LIVE (1.7)** (`/live-cycle/summary` + reset de circuito), `runtime_status`, reconciliador + Auto LIVE em paralelo.
 
 ## API (resumo)
 
@@ -255,22 +251,12 @@ Erros **inesperados** no tick incrementam `consecutiveErrors`; ao atingir `AUTO_
 |--------|------|--------|
 | GET | `/bot/config` | Config + camada efetiva (`executionLayer`) |
 | PATCH | `/bot/config` | Parâmetros |
-| POST | `/bot/start` | `{ "mode": "DRY_RUN" \| "LIVE", "confirm"?: "ENABLE_LIVE_TRADING" }` — LIVE exige confirmação + `ENABLE_LIVE_TRADING` no `.env` |
+| POST | `/bot/start` | `{ "confirm": "ENABLE_LIVE_TRADING" }` — exige `ENABLE_LIVE_TRADING` no `.env` + chaves |
 | POST | `/bot/stop` | `OFF` |
 | POST | `/bot/kill-switch` | `KILL_SWITCH` |
-| POST | `/bot/mode/dry-run` | `execution_mode = DRY_RUN` |
 | POST | `/bot/mode/live` | `{ "confirm": "ENABLE_LIVE_TRADING" }` + `ENABLE_LIVE_TRADING` + chaves |
 | POST | `/bot/pause-buys` | `PAUSED_BUYS` |
 | POST | `/bot/sell-only` | `SELL_ONLY` |
-
-### Simulação
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/simulation/state` | Saldo simulado, preço forçado, contagens |
-| POST | `/simulation/reset` | Repor USDT/BTC simulados e preço forçado |
-| POST | `/simulation/seed-balance` | `{ "usdt", "btc" }` |
-| POST | `/simulation/force-price` | `{ "price": string \| null }` |
 
 ### Outros
 
@@ -281,21 +267,19 @@ Erros **inesperados** no tick incrementam `consecutiveErrors`; ao atingir `AUTO_
 - `GET /reconciliation/live-summary` — estado do último tick do worker de reconciliação LIVE.
 - `POST /orders/preview` — pré-validação LIVE (sem ordem): `checks`, `flooredAmount`, `quoteValue`, etc.
 - `POST /orders/live-test` — ordem **limit** real manual (teto quote + `confirm: "LIVE_TEST_ORDER"`).
-- `GET /portfolio/balance` — JSON com `executionMode`, `motorUsesSimulatedBalance`, `portfolioBalanceSource`, `simulated` (opcional) e `coinex` (opcional): saldos `available` / `frozen` / `total` por ativo; CoinEx só com chaves e `PORTFOLIO_BALANCE_SOURCE` adequado.
-- `GET /market/ticker/:market` — último preço conforme `MARKET_DATA_SOURCE` + cache + fallback; inclui `priceSource`, `updatedAt`, `coinex` quando aplicável.
+- `GET /portfolio/balance` — JSON com `executionMode`, `portfolioBalanceSource` e `coinex`: saldos `available` / `frozen` / `total` por ativo (com chaves).
+- `GET /market/ticker/:market` — último preço CoinEx + cache; inclui `priceSource`, `updatedAt`.
 - `GET /market/info/:market` — **`MarketSpec`** normalizado (sem campo `raw`): `basePrecision`, `quotePrecision`, `minAmount`, `minValue`, fees, flags; `source` = `COINEX` ou `STATIC_FALLBACK`.
 
 ## Ordens (Fase 1.2 + 1.6)
 
-- **`OrderManager`** delega a **`SimulatedOrderExecutor`** ou **`CoinexOrderExecutor`** conforme `RuntimeStateService.getPermissions()`.
+- **`OrderManager`** delega a **`CoinexOrderExecutor`** quando a camada efetiva é LIVE.
 - **CoinEx LIVE**: `CoinexOrderExecutor` com **`runLivePlacePrecheck`** antes de cada envio; cancelamento via **`POST /spot/cancel-order`** (atualiza ordem local para `CANCELLED` em sucesso).
 
 ## Workers
 
-- **Ticker simulado** — após `listen`, intervalo `BOT_PRICE_POLL_INTERVAL_MS` (mantém o store simulado alinhado com o worker de preço simulado).
-- **Ciclos simulados** — a cada **8s** (fixo no código por agora): só com `execution_layer === SIMULATED`; preço via **`MarketDataService.getTicker()`**; **quantidades e preços** respeitam **`MarketSpecService.getSpec()`** (floor + mínimos); respeita `runtime_status`, `max_open_cycles`, saldo mínimo simulado; cooldown ~25s entre novas aberturas; eventos `CYCLE_CREATED`, `SIMULATED_*`, `CYCLE_CLOSED_PROFIT`, etc.
 - **Reconciliação LIVE** — intervalo **`BOT_RECONCILIATION_INTERVAL_MS`**: só processa ordens com `exchange_order_id` numérico e estado `OPEN` / `PARTIALLY_FILLED`; requer chaves CoinEx; não envia novas ordens.
-- **FULL Auto LIVE Worker** — intervalo **`AUTO_LIVE_WORKER_INTERVAL_MS`**: só com `ENABLE_AUTO_LIVE_WORKER=true`, `AUTO_LIVE_CONFIRM_ENV`, `PORTFOLIO_BALANCE_SOURCE` ∈ {`COINEX`,`BOTH`} e todas as travas; ciclos `is_live_auto_worker`; não altera o worker simulado.
+- **FULL Auto LIVE Worker** — intervalo **`AUTO_LIVE_WORKER_INTERVAL_MS`**: só com `ENABLE_AUTO_LIVE_WORKER=true`, `AUTO_LIVE_CONFIRM_ENV`, e todas as travas; ciclos `is_live_auto_worker`.
 
 ## Scripts
 

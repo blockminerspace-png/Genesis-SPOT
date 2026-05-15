@@ -3,7 +3,6 @@ import type { BotExecutionMode } from "@prisma/client";
 import type { Env } from "../../config/env.js";
 import { appendBotEvent } from "../strategy/bot-control.service.js";
 import { CoinexBalanceProvider } from "./coinex-balance.provider.js";
-import { getSimulatedBalanceSlice } from "./simulated-balance.provider.js";
 import type { AssetBalance, CoinexBalanceSlice, PortfolioBalancePayload } from "./balance.types.js";
 
 type CoinexCacheEntry = {
@@ -100,21 +99,11 @@ export async function buildPortfolioBalancePayload(
   log: FastifyBaseLogger,
   executionMode: BotExecutionMode,
 ): Promise<PortfolioBalancePayload> {
-  const src = env.PORTFOLIO_BALANCE_SOURCE;
-  const motorUsesSimulatedBalance = executionMode === "DRY_RUN";
-
-  const simulated = src === "SIMULATED" || src === "BOTH" ? getSimulatedBalanceSlice() : null;
-
-  let coinex: CoinexBalanceSlice | null = null;
-  if (src === "COINEX" || src === "BOTH") {
-    coinex = await buildCoinexSlice(env, log);
-  }
+  const coinex = await buildCoinexSlice(env, log);
 
   return {
     executionMode,
-    portfolioBalanceSource: src,
-    motorUsesSimulatedBalance,
-    simulated,
+    portfolioBalanceSource: env.PORTFOLIO_BALANCE_SOURCE,
     coinex,
   };
 }

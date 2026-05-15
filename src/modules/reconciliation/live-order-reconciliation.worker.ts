@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma } from "@prisma/client";
-import { CycleStatus, OrderStatus } from "@prisma/client";
+import { CycleStatus, OrderSide, OrderStatus } from "@prisma/client";
 import type { Env } from "../../config/env.js";
 import { prisma } from "../../infrastructure/database/prisma.js";
 import { appendBotEvent } from "../strategy/bot-control.service.js";
@@ -13,6 +13,7 @@ import {
 } from "./coinex-order-sync.service.js";
 import { fetchCoinexUserDealsForOrder, importCoinexDealsAsFills, sumLocalFillValues } from "./order-fill-sync.service.js";
 import { pickPrimaryFeeFromSnapshot, syncLinkedCycleForLiveOrder } from "./cycle-live-sync.js";
+import { computeLiveAutoSellTargetPrice } from "../live-cycle/live-sell-target.util.js";
 
 const EPS_DRIFT = new Decimal("0.01");
 
@@ -244,6 +245,19 @@ export async function runLiveOrderReconciliationTick(env: Env, log: FastifyBaseL
         },
       } as unknown as Prisma.InputJsonValue;
 
+      let sellTargetPrice: string | undefined;
+      if (
+        order.cycleId &&
+        order.side === OrderSide.BUY &&
+        (nextStatus === OrderStatus.FILLED || nextStatus === OrderStatus.PARTIALLY_FILLED) &&
+        new Decimal(snap.filledAmount).gt(0)
+      ) {
+        const fa = new Decimal(snap.filledAmount);
+        const fv = new Decimal(snap.filledValue);
+        const avgEntry = fv.div(fa).toFixed(12);
+        sellTargetPrice = await computeLiveAutoSellTargetPrice(order.market, avgEntry);
+      }
+
       const { cycleNeedsReview } = await prisma.$transaction(async (tx) => {
         await tx.order.update({
           where: { id: order.id },
@@ -267,6 +281,7 @@ export async function runLiveOrderReconciliationTick(env: Env, log: FastifyBaseL
           nextOrderStatus: nextStatus,
           filledAmount: snap.filledAmount,
           filledValue: snap.filledValue,
+          sellTargetPrice,
         });
       });
 

@@ -1,7 +1,7 @@
 import type { BotExecutionMode, BotRuntimeStatus } from "@prisma/client";
 
 /** Camada efetiva de envio de ordens (após Postgres + capacidades .env). */
-export type RuntimeExecutionLayer = "SIMULATED" | "LIVE" | "DISABLED";
+export type RuntimeExecutionLayer = "LIVE" | "DISABLED";
 
 export type RuntimePermission = {
   runtimeStatus: BotRuntimeStatus;
@@ -24,10 +24,22 @@ export type PlaceLimitOrderInput = {
   liveMaxQuoteOverride?: string;
 };
 
+/** Compra SPOT a mercado (CoinEx v2: `type=market`, `ccy` = moeda base, `amount` = quantidade base). */
+export type PlaceMarketBuyInput = {
+  cycleId?: string | null;
+  market: string;
+  /** Quantidade base (já com floor do precheck). */
+  baseAmount: string;
+  /** Último preço / referência para notional no precheck e preço gravado se a resposta não trouxer fill. */
+  referencePrice: string;
+  clientId: string;
+  liveMaxQuoteOverride?: string;
+};
+
 export type PlacedOrder = {
   exchangeOrderId: string | null;
   orderId: string;
-  mode: "simulated" | "live";
+  mode: "live";
   raw: unknown;
 };
 

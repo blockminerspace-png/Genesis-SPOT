@@ -34,4 +34,10 @@ export type LiveCycleApiSummary = LiveCycleSummary & {
   targetProfitPct: string;
   /** Passo da grelha na compra limite: lido de `bot_configs` (Parâmetros). */
   gridStepPct: string;
+  /** Moeda quote do par (ex.: USDC) para rótulos no painel. */
+  quoteCurrency: string;
+  /** Último preço (floor ao tick do spec) usado como base da grelha na queda. */
+  referenceLastPrice: string | null;
+  /** Preços de referência abaixo do último (1.º…N.º degrau = passo da grelha); ilustrativo — Auto LIVE compra ao mercado. */
+  dropBuyReferencePrices: string[];
 };

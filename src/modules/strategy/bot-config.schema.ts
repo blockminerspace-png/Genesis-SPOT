@@ -22,19 +22,9 @@ export type PatchBotConfigBody = z.infer<typeof patchBotConfigBodySchema>;
 
 export const postBotStartBodySchema = z
   .object({
-    mode: z.enum(["DRY_RUN", "LIVE"]).default("DRY_RUN"),
-    confirm: z.string().optional(),
+    confirm: z.literal("ENABLE_LIVE_TRADING"),
   })
-  .strict()
-  .superRefine((val, ctx) => {
-    if (val.mode === "LIVE" && val.confirm !== "ENABLE_LIVE_TRADING") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'LIVE exige confirm: "ENABLE_LIVE_TRADING" no JSON',
-        path: ["confirm"],
-      });
-    }
-  });
+  .strict();
 
 export type PostBotStartBody = z.infer<typeof postBotStartBodySchema>;
 

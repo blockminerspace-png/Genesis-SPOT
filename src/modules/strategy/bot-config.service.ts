@@ -13,10 +13,9 @@ export async function ensureBotConfigFromEnv(env: Env) {
   }
 
   let runtimeStatus: BotRuntimeStatus = "OFF";
-  let executionMode: BotExecutionMode = "DRY_RUN";
+  const executionMode: BotExecutionMode = "LIVE";
   if (env.BOT_ENABLED) {
     runtimeStatus = "RUNNING";
-    executionMode = env.DRY_RUN ? "DRY_RUN" : "LIVE";
   }
 
   return prisma.botConfig.create({
@@ -42,7 +41,7 @@ export async function getBotConfigView(env: Env) {
   const row = await ensureBotConfigFromEnv(env);
   const keys = Boolean(env.COINEX_ACCESS_ID && env.COINEX_SECRET_KEY);
 
-  let executionLayer: "SIMULATED" | "LIVE" | "DISABLED" = "DISABLED";
+  let executionLayer: "LIVE" | "DISABLED" = "DISABLED";
   let liveBlockedMissingKeys = false;
 
   if (row.runtimeStatus === "OFF" || row.runtimeStatus === "KILL_SWITCH") {
@@ -55,10 +54,9 @@ export async function getBotConfigView(env: Env) {
       executionLayer = "LIVE";
     }
   } else {
-    executionLayer = "SIMULATED";
+    executionLayer = "DISABLED";
   }
 
-  const simulatedExecution = executionLayer === "SIMULATED";
   const liveExecution = executionLayer === "LIVE";
 
   return {
@@ -77,9 +75,7 @@ export async function getBotConfigView(env: Env) {
       executionMode: row.executionMode,
       executionLayer,
       liveBlockedMissingKeys,
-      simulatedExecution,
       liveExecution,
-      envDryRun: env.DRY_RUN,
       nodeEnv: env.NODE_ENV,
       coinexConfigured: keys,
       pricePollIntervalMs: env.BOT_PRICE_POLL_INTERVAL_MS,

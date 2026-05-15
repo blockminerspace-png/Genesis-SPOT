@@ -47,6 +47,7 @@ export async function getRecentCycles(limit = RECENT_CYCLES_LIMIT) {
       id: true,
       market: true,
       status: true,
+      isLiveAutoWorker: true,
       entryPrice: true,
       targetPrice: true,
       quoteBudget: true,
@@ -62,6 +63,8 @@ export async function getRecentCycles(limit = RECENT_CYCLES_LIMIT) {
       closedAt: true,
       createdAt: true,
       updatedAt: true,
+      buyOrder: { select: { price: true, status: true, type: true } },
+      sellOrder: { select: { price: true, status: true, type: true } },
     },
   });
 }

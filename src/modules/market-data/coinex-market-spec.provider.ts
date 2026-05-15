@@ -1,6 +1,8 @@
 import type { Env } from "../../config/env.js";
 import type { MarketSpec } from "./market-spec.types.js";
 
+/** Resposta GET `spot/market` (v2): https://docs.coinex.com/api/v2/spot/market/http/list-market — `min_amount`, `min_value`, precisões. */
+
 type CoinexListResponse = { code: number; message: string; data: Array<Record<string, unknown>> };
 
 function normalizeBasePrecision(raw: number): number {

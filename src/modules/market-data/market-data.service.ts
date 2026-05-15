@@ -1,9 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Env } from "../../config/env.js";
 import { appendBotEvent } from "../strategy/bot-control.service.js";
-import { getSimulationState } from "../simulation/simulation-state.store.js";
 import { CoinexMarketDataProvider } from "./coinex-market-data.provider.js";
-import { SimulatedMarketDataProvider } from "./simulated-market-data.provider.js";
 import type { MarketTickerSnapshot } from "./market-data-provider.interface.js";
 
 const lastCoinexOkEventMs = new Map<string, number>();
@@ -15,7 +13,6 @@ type CacheEntry = { snap: MarketTickerSnapshot; expires: number; fetchedAtMs: nu
 
 export class MarketDataService {
   private readonly coinex: CoinexMarketDataProvider;
-  private readonly simulated: SimulatedMarketDataProvider;
   private readonly cache = new Map<string, CacheEntry>();
 
   constructor(
@@ -23,43 +20,22 @@ export class MarketDataService {
     private readonly log: FastifyBaseLogger,
   ) {
     this.coinex = new CoinexMarketDataProvider(env);
-    this.simulated = new SimulatedMarketDataProvider();
   }
 
   private cacheTtl(): number {
     return this.env.MARKET_DATA_CACHE_TTL_MS;
   }
 
-  /** Último fetch ao CoinEx/simulado (para travas LIVE). Em `FORCED` não há rede. */
+  /** Último fetch ao CoinEx (para travas LIVE). */
   async getTickerWithFetchMeta(
     market: string,
   ): Promise<{ snap: MarketTickerSnapshot; fetchedAtMs: number }> {
     const key = market.toUpperCase();
-    const forced = getSimulationState().forcedPrice;
-    if (forced) {
-      return {
-        snap: {
-          market: key,
-          last: forced,
-          updatedAt: new Date().toISOString(),
-          priceSource: "FORCED",
-        },
-        fetchedAtMs: Date.now(),
-      };
-    }
 
     const now = Date.now();
     const hit = this.cache.get(key);
     if (hit && hit.expires > now) {
       return { snap: hit.snap, fetchedAtMs: hit.fetchedAtMs };
-    }
-
-    if (this.env.MARKET_DATA_SOURCE === "SIMULATED") {
-      const s = await this.simulated.fetchTicker(key);
-      const snap: MarketTickerSnapshot = { ...s, priceSource: "SIMULATED" };
-      const fetchedAtMs = Date.now();
-      this.cache.set(key, { snap, expires: now + this.cacheTtl(), fetchedAtMs });
-      return { snap, fetchedAtMs };
     }
 
     try {
@@ -73,22 +49,9 @@ export class MarketDataService {
       this.maybeEmitCoinexOk(key);
       return { snap, fetchedAtMs };
     } catch (err) {
-      this.log.warn({ err, market: key }, "CoinEx ticker falhou — fallback simulado");
+      this.log.warn({ err, market: key }, "CoinEx ticker falhou");
       this.maybeEmitCoinexError(key, err);
-
-      try {
-        const s = await this.simulated.fetchTicker(key);
-        const snap: MarketTickerSnapshot = {
-          ...s,
-          priceSource: "COINEX_FALLBACK",
-        };
-        const fetchedAtMs = Date.now();
-        this.cache.set(key, { snap, expires: now + Math.min(this.cacheTtl(), 1500), fetchedAtMs });
-        return { snap, fetchedAtMs };
-      } catch (e2) {
-        this.log.error({ err: e2, market: key }, "fallback simulado também falhou");
-        throw err;
-      }
+      throw err;
     }
   }
 

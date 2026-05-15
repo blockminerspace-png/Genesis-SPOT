@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { PlaceLimitOrderInput } from "../../runtime/runtime-state.types.js";
+import type { PlaceLimitOrderInput, PlaceMarketBuyInput } from "../../runtime/runtime-state.types.js";
 
 export function hashClientIdForCoinex(clientId: string): string {
   return createHash("sha256").update(clientId, "utf8").digest("hex").slice(0, 32);
@@ -35,6 +35,23 @@ export function mapPlaceLimitFromInput(
     price: flooredPrice,
     clientIdHashed: hashClientIdForCoinex(input.clientId),
   });
+}
+
+/** CoinEx v2 POST /spot/order — compra a mercado por quantidade em moeda base. */
+export function mapPlaceMarketBuyFromInput(
+  input: PlaceMarketBuyInput,
+  flooredBaseAmount: string,
+  baseCurrency: string,
+): Record<string, unknown> {
+  return {
+    market: input.market.toUpperCase(),
+    market_type: "SPOT",
+    side: "buy",
+    type: "market",
+    amount: flooredBaseAmount,
+    ccy: baseCurrency.toUpperCase(),
+    client_id: hashClientIdForCoinex(input.clientId),
+  };
 }
 
 export function extractOrderIdFromPlaceResponse(data: unknown): string {

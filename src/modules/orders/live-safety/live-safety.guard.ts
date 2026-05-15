@@ -44,7 +44,7 @@ export async function runLivePlacePrecheck(
   log: FastifyBaseLogger,
   p: RuntimePermission,
   input: { market: string; side: "BUY" | "SELL"; amount: string; price: string },
-  options?: { maxQuotePerOrder?: string },
+  options?: { maxQuotePerOrder?: string; skipMakerOnlyHint?: boolean },
 ): Promise<LivePlacePrecheckResult> {
   const checks: LivePrecheckCheck[] = [];
   const market = input.market.toUpperCase();
@@ -176,7 +176,7 @@ export async function runLivePlacePrecheck(
     };
   }
 
-  if (env.LIVE_REQUIRE_MAKER_ONLY) {
+  if (env.LIVE_REQUIRE_MAKER_ONLY && !options?.skipMakerOnlyHint) {
     const last = new Decimal(tickerMeta.snap.last);
     const px = new Decimal(flooredPrice);
     const makerSideOk =
@@ -195,18 +195,44 @@ export async function runLivePlacePrecheck(
   }
 
   if (input.side === "BUY") {
-    const usdt = pickBalance(balMeta.balances, spec.quoteCurrency);
-    const need = qv;
-    const ok = usdt ? new Decimal(usdt.available).gte(need) : false;
-    if (!push(checks, "balance_buy_quote", ok, spec.quoteCurrency)) {
-      return { valid: false, checks, flooredAmount, flooredPrice, quoteValue, spec, error: "saldo quote insuficiente" };
+    const quoteBal = pickBalance(balMeta.balances, spec.quoteCurrency);
+    const need = new Decimal(quoteValue);
+    const availStr = quoteBal?.available ?? "0";
+    const avail = new Decimal(availStr);
+    const ok = quoteBal ? avail.gte(need) : false;
+    const detail = quoteBal
+      ? `${spec.quoteCurrency} disponível=${availStr} necessário≈${quoteValue} (notional ordem)`
+      : `${spec.quoteCurrency} sem linha no snapshot CoinEx (ativos devolvidos: ${balMeta.balances.map((b) => b.asset).join(",") || "—"})`;
+    if (!push(checks, "balance_buy_quote", ok, detail)) {
+      return {
+        valid: false,
+        checks,
+        flooredAmount,
+        flooredPrice,
+        quoteValue,
+        spec,
+        error: `saldo ${spec.quoteCurrency} insuficiente (${detail})`,
+      };
     }
   } else {
     const base = pickBalance(balMeta.balances, spec.baseCurrency);
     const need = new Decimal(flooredAmount);
-    const ok = base ? new Decimal(base.available).gte(need) : false;
-    if (!push(checks, "balance_sell_base", ok, spec.baseCurrency)) {
-      return { valid: false, checks, flooredAmount, flooredPrice, quoteValue, spec, error: "saldo base insuficiente" };
+    const availStr = base?.available ?? "0";
+    const avail = new Decimal(availStr);
+    const ok = base ? avail.gte(need) : false;
+    const detail = base
+      ? `${spec.baseCurrency} disponível=${availStr} necessário=${flooredAmount}`
+      : `${spec.baseCurrency} sem linha no snapshot (ativos: ${balMeta.balances.map((b) => b.asset).join(",") || "—"})`;
+    if (!push(checks, "balance_sell_base", ok, detail)) {
+      return {
+        valid: false,
+        checks,
+        flooredAmount,
+        flooredPrice,
+        quoteValue,
+        spec,
+        error: `saldo ${spec.baseCurrency} insuficiente (${detail})`,
+      };
     }
   }
 

@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: genesis-spot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: bot
+      POSTGRES_DB: botspot
+    volumes:
+      - genesis_spot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot -d botspot"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - genesis_spot_proxy
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genesis-spot-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgresql://bot:bot@postgres:5432/botspot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3000"
+    networks:
+      - genesis_spot_proxy
+
+networks:
+  genesis_spot_proxy:
+    name: genesis_spot_proxy
+
+volumes:
+  genesis_spot_pgdata:
