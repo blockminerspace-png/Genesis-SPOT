@@ -18,6 +18,8 @@ const apiPrefixes = [
   "/market",
   "/reconciliation",
   "/live-cycle",
+  "/bot-spot",
+  "/strategy",
 ] as const;
 
 /** Em dev (5173), `/login` deve servir o mesmo `index.html` que `/`. */
@@ -27,7 +29,9 @@ function loginSpaFallback(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         const raw = req.url?.split("?")[0] ?? "";
-        if (raw === "/login") req.url = "/" + (req.url?.includes("?") ? `?${req.url.split("?").slice(1).join("?")}` : "");
+        const spa =
+          raw === "/login" || raw.startsWith("/bot-spot") || raw.startsWith("/legacy");
+        if (spa) req.url = "/" + (req.url?.includes("?") ? `?${req.url.split("?").slice(1).join("?")}` : "");
         next();
       });
     },
