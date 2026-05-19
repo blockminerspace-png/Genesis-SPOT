@@ -29,8 +29,7 @@ function loginSpaFallback(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         const raw = req.url?.split("?")[0] ?? "";
-        const spa =
-          raw === "/login" || raw.startsWith("/bot-spot") || raw.startsWith("/legacy");
+        const spa = raw === "/login" || raw.startsWith("/bot-spot");
         if (spa) req.url = "/" + (req.url?.includes("?") ? `?${req.url.split("?").slice(1).join("?")}` : "");
         next();
       });

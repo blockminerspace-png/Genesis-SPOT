@@ -26,7 +26,7 @@ export function BotSpotDebugPage() {
         ))}
       </ul>
       <p className="bs-muted">
-        Painel principal: <a href="/">/</a> (alias <a href="/legacy">/legacy</a>)
+        <a href="/">← Voltar ao painel principal</a>
       </p>
     </div>
   );

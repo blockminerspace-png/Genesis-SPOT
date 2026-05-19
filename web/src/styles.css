@@ -2008,52 +2008,60 @@ code {
   font-size: 0.82rem;
 }
 
-/* Bot Spot cockpit — escopo isolado (.bs-*), sem alterar layout global */
-.bs-shell {
-  min-height: 60vh;
-  color: inherit;
+/* Bot Spot — escopo isolado (.bs-*), sem alterar layout global */
+.bs-page {
+  padding-top: 4px;
 }
 
-.bs-nav {
+.bs-subnav {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #21262d;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border, #2a3140);
 }
 
-.bs-nav a {
-  color: #8b949e;
+.bs-subnav-link {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  color: var(--muted, #8b949e);
   text-decoration: none;
-  font-size: 0.9rem;
+  border: 1px solid transparent;
 }
 
-.bs-nav a.active {
-  color: #58a6ff;
+.bs-subnav-link:hover {
+  color: var(--text, #e6edf3);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bs-subnav-link-active {
+  color: var(--accent, #58a6ff);
+  border-color: var(--border, #2a3140);
+  background: rgba(88, 166, 255, 0.08);
   font-weight: 600;
 }
 
-.bs-brand {
-  font-weight: 700;
-  margin-right: 12px;
+.btn-nav-active {
+  border-color: var(--accent, #58a6ff) !important;
 }
 
-.bs-back-link {
-  color: var(--accent, #58a6ff);
-  text-decoration: none;
-  font-size: 0.9rem;
-  margin-right: 8px;
+.bs-settings .bs-kv {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 2fr;
+  gap: 8px 16px;
+  max-width: 520px;
 }
 
-.bs-back-link:hover {
-  text-decoration: underline;
+.bs-settings .bs-kv dt {
+  color: var(--muted, #8b949e);
+  margin: 0;
 }
 
-.bs-main {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+.bs-settings .bs-kv dd {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
 }
 
 .bs-hero {

@@ -51,11 +51,6 @@ export async function fetchBotSpotOrders(): Promise<unknown> {
   return res.ok ? res.data : null;
 }
 
-export async function fetchBotSpotSettings(): Promise<unknown> {
-  const res = await apiGet("/bot/config");
-  return res.ok ? res.data : null;
-}
-
 export async function fetchBotSpotEvents(): Promise<unknown> {
   const res = await apiGet("/bot-spot/events");
   return res.ok ? res.data : null;

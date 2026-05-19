@@ -1,3 +1,7 @@
+/**
+ * Camada de leitura/API para o cockpit Bot Spot.
+ * Não cria ordens — o motor é `btc-drop` + live-cycle worker.
+ */
 import type { FastifyBaseLogger } from "fastify";
 import { CycleStatus, OrderSide } from "@prisma/client";
 import type { Env } from "../../config/env.js";

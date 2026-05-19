@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { BotSpotSection } from "./features/bot-spot/BotSpotRoutes.js";
 import { useAuth } from "./auth/AuthContext.js";
 import { apiGet, apiPatch, apiPost, apiPostLogout } from "./lib/api.js";
 import { useToast } from "./hooks/useToast.js";
@@ -220,6 +221,8 @@ const CONFIG_FIELDS: { name: string; label: string }[] = [
 export default function DashboardApp() {
   const { loading, authRequired, session, invalidateSession } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isBotSpot = location.pathname === "/bot-spot" || location.pathname.startsWith("/bot-spot/");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [data, setData] = useState<DataBag | null>(null);
   const [healthOk, setHealthOk] = useState<"good" | "warn" | "danger">("good");
@@ -634,9 +637,12 @@ export default function DashboardApp() {
               <button type="button" className="btn btn-primary" onClick={() => void loadAll()}>
                 Atualizar
               </button>
-              <Link to="/bot-spot" className="btn ghost">
+              <NavLink
+                to="/bot-spot"
+                className={({ isActive }) => `btn ghost${isActive ? " btn-nav-active" : ""}`}
+              >
                 Bot Spot
-              </Link>
+              </NavLink>
               {authRequired ? (
                 <button type="button" className="btn ghost" onClick={() => void logout()}>
                   Sair
@@ -661,6 +667,10 @@ export default function DashboardApp() {
       </header>
 
       <main className="site-main">
+        {isBotSpot ? (
+          <BotSpotSection />
+        ) : (
+          <>
         <nav className="tabs" role="tablist" aria-label="Secções do painel">
           {tabs.map((t) => (
             <button
@@ -1174,6 +1184,8 @@ export default function DashboardApp() {
               </ul>
             </div>
           </section>
+        )}
+          </>
         )}
       </main>
 
