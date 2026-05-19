@@ -26,7 +26,7 @@ export function BotSpotDebugPage() {
         ))}
       </ul>
       <p className="bs-muted">
-        Painel legado completo: <a href="/legacy">/legacy</a>
+        Painel principal: <a href="/">/</a> (alias <a href="/legacy">/legacy</a>)
       </p>
     </div>
   );

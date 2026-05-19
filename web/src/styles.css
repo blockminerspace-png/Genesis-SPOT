@@ -2008,11 +2008,10 @@ code {
   font-size: 0.82rem;
 }
 
-/* Bot Spot cockpit */
+/* Bot Spot cockpit — escopo isolado (.bs-*), sem alterar layout global */
 .bs-shell {
-  min-height: 100vh;
-  background: var(--bg, #0b0f14);
-  color: var(--text, #e6edf3);
+  min-height: 60vh;
+  color: inherit;
 }
 
 .bs-nav {
@@ -2038,6 +2037,17 @@ code {
 .bs-brand {
   font-weight: 700;
   margin-right: 12px;
+}
+
+.bs-back-link {
+  color: var(--accent, #58a6ff);
+  text-decoration: none;
+  font-size: 0.9rem;
+  margin-right: 8px;
+}
+
+.bs-back-link:hover {
+  text-decoration: underline;
 }
 
 .bs-main {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext.js";
 import { apiGet, apiPatch, apiPost, apiPostLogout } from "./lib/api.js";
 import { useToast } from "./hooks/useToast.js";
@@ -634,6 +634,9 @@ export default function DashboardApp() {
               <button type="button" className="btn btn-primary" onClick={() => void loadAll()}>
                 Atualizar
               </button>
+              <Link to="/bot-spot" className="btn ghost">
+                Bot Spot
+              </Link>
               {authRequired ? (
                 <button type="button" className="btn ghost" onClick={() => void logout()}>
                   Sair

@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext.js";
 import LoginPage from "./pages/LoginPage.js";
 import DashboardApp from "./App.js";
@@ -13,9 +13,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<Navigate to="/bot-spot" replace />} />
           <Route path="/bot-spot/*" element={<BotSpotApp />} />
           <Route path="/legacy/*" element={<DashboardApp />} />
+          <Route path="/*" element={<DashboardApp />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

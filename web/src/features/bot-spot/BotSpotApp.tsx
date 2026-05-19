@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { BotSpotDashboard } from "./components/BotSpotDashboard.js";
 import { BotSpotChartView } from "./components/BotSpotChartView.js";
 import { BotSpotCyclesPage } from "./pages/BotSpotCyclesPage.js";
@@ -19,7 +19,10 @@ export default function BotSpotApp() {
   return (
     <div className="bs-shell">
       <nav className="bs-nav">
-        <span className="bs-brand">Genesis BTC Spot</span>
+        <span className="bs-brand">Bot Spot</span>
+        <Link to="/" className="bs-back-link">
+          ← Painel principal
+        </Link>
         {nav.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? "active" : "")}>
             {n.label}
