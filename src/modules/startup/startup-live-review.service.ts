@@ -12,7 +12,7 @@ import { fetchCoinexOrderStatus } from "../reconciliation/coinex-order-sync.serv
 import { getRuntimeStateService } from "../runtime/runtime-state.service.js";
 import { validateOrderAgainstMarketSpec } from "../risk/risk-manager.js";
 import { appendBotEvent } from "../strategy/bot-control.service.js";
-import { targetSellFromEntry } from "../strategy/grid.strategy.js";
+import { liveAutoOrderQuoteCap, targetSellFromEntry } from "../strategy/grid.strategy.js";
 
 let startupLiveReviewDone = false;
 
@@ -129,10 +129,8 @@ export async function runStartupLiveOpenSellReview(env: Env, log: FastifyBaseLog
     }
 
     const perms2 = await rt.getPermissions();
-    const sellQuoteEst = new Decimal(sellAmt).mul(new Decimal(newPx));
-    const sellQuoteCapForPrecheck = Decimal.min(sellQuoteEst, new Decimal(env.LIVE_MAX_ORDER_QUOTE_VALUE)).toFixed(
-      spec.quotePrecision,
-    );
+    const sellQuoteEst = new Decimal(sellAmt).mul(new Decimal(newPx)).toFixed(spec.quotePrecision);
+    const sellQuoteCapForPrecheck = liveAutoOrderQuoteCap(sellQuoteEst, env.LIVE_MAX_ORDER_QUOTE_VALUE, spec);
     const pre = await runLivePlacePrecheck(
       env,
       log,
@@ -150,8 +148,10 @@ export async function runStartupLiveOpenSellReview(env: Env, log: FastifyBaseLog
 
     const flooredAmt = pre.flooredAmount;
     const flooredPx = pre.flooredPrice;
-    const sellQuoteCap = Decimal.min(new Decimal(flooredAmt).mul(new Decimal(flooredPx)), new Decimal(env.LIVE_MAX_ORDER_QUOTE_VALUE)).toFixed(
-      spec.quotePrecision,
+    const sellQuoteCap = liveAutoOrderQuoteCap(
+      new Decimal(flooredAmt).mul(new Decimal(flooredPx)).toFixed(spec.quotePrecision),
+      env.LIVE_MAX_ORDER_QUOTE_VALUE,
+      spec,
     );
 
     try {

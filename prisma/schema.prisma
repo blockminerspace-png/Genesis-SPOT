@@ -79,6 +79,20 @@ model BotConfig {
   @@map("bot_configs")
 }
 
+/** Estado da estratégia BTC Drop (níveis absolutos em USDT). */
+model BtcDropStrategyState {
+  market        String   @id
+  anchorPrice   Decimal  @map("anchor_price") @db.Decimal(30, 12)
+  nextBuyPrice  Decimal  @map("next_buy_price") @db.Decimal(30, 12)
+  stepUsdt      Decimal  @map("step_usdt") @db.Decimal(30, 12)
+  baseAmount    Decimal  @map("base_amount") @db.Decimal(30, 12)
+  initialized   Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("btc_drop_strategy_state")
+}
+
 model TradeCycle {
   id     String      @id @default(uuid()) @db.Uuid
   market String
@@ -86,6 +100,10 @@ model TradeCycle {
 
   /** Ciclo criado pelo Auto LIVE Worker (Fase 1.7); isolado de ciclos simulados. */
   isLiveAutoWorker Boolean @default(false) @map("is_live_auto_worker")
+
+  strategyName         String?  @map("strategy_name")
+  strategyLevelPrice   Decimal? @map("strategy_level_price") @db.Decimal(30, 12)
+  baseOrderAmount      Decimal? @map("base_order_amount") @db.Decimal(30, 12)
 
   entryPrice  Decimal? @map("entry_price") @db.Decimal(30, 12)
   targetPrice Decimal? @map("target_price") @db.Decimal(30, 12)
@@ -197,6 +215,15 @@ model DashboardOtpChallenge {
 }
 
 /** Anti força bruta na palavra-passe (por email normalizado + IP). */
+/** Pico de preço por par para gatilho de compra na queda (grid Auto LIVE). */
+model AutoLiveMarketAnchor {
+  market      String   @id
+  anchorPrice Decimal  @map("anchor_price") @db.Decimal(30, 12)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("auto_live_market_anchors")
+}
+
 model DashboardPasswordThrottle {
   id          String    @id @default(uuid()) @db.Uuid
   emailNorm   String    @map("email_norm")

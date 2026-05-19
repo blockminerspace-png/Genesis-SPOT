@@ -12,7 +12,7 @@ export function gridBuyLimitBelowLast(lastPrice: string, gridStepPct: string, sp
 
 /**
  * N primeiros preços de referência «na queda» (compra limite hipotética a cada passo da grelha abaixo do último).
- * Só para painel / API — o Auto LIVE compra ao mercado ao preço corrente.
+ * O Auto LIVE usa o pico persistido (`auto_live_market_anchors`) + esta mesma fração para decidir compra.
  */
 export function gridBuyDropReferenceLevels(
   flooredLastPrice: string,
@@ -128,6 +128,12 @@ export function liveAutoBuyBaseAmountExchangeMinimums(
  * `max(LIVE_MAX_ORDER_QUOTE_VALUE, orçamento, notional)` — assim um `.env` antigo com LIVE_MAX=1
  * não impede o lote mínimo da corretora (~8 USDC). O volume **diário** continua a ser validado em `runLivePlacePrecheck`.
  */
+/** Teto por ordem: nunca abaixo do notional real (corrige LIVE_MAX baixo com lote mínimo ~5–15 USDC). */
+export function liveAutoOrderQuoteCap(notional: string, liveMaxOrderQuote: string, spec: MarketSpec): string {
+  const n = new Decimal(notional);
+  return Decimal.max(new Decimal(liveMaxOrderQuote), n).toFixed(spec.quotePrecision);
+}
+
 export function liveAutoBuyQuoteCap(
   quoteBudget: string,
   baseAmount: string,
@@ -137,5 +143,5 @@ export function liveAutoBuyQuoteCap(
 ): string {
   const notional = new Decimal(baseAmount).mul(new Decimal(limitPrice));
   const need = Decimal.max(new Decimal(quoteBudget), notional);
-  return Decimal.max(new Decimal(liveMaxOrderQuote), need).toFixed(spec.quotePrecision);
+  return liveAutoOrderQuoteCap(need.toFixed(spec.quotePrecision), liveMaxOrderQuote, spec);
 }

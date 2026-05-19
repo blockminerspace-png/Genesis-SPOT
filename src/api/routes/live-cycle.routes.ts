@@ -10,7 +10,9 @@ import { appendBotEvent } from "../../modules/strategy/bot-control.service.js";
 import { ensureBotConfigFromEnv } from "../../modules/strategy/bot-config.service.js";
 import { gridBuyDropReferenceLevels } from "../../modules/strategy/grid.strategy.js";
 import { getRuntimeStateService } from "../../modules/runtime/runtime-state.service.js";
-import { autoLiveMarket, effectiveAutoLiveQuoteBudget } from "../../modules/live-cycle/live-cycle.service.js";
+import { autoLiveMarket, autoLiveMarkets, effectiveAutoLiveQuoteBudget } from "../../modules/live-cycle/live-cycle.service.js";
+import { getBtcDropStateView } from "../../modules/strategy/btc-drop-state.service.js";
+import { readBtcDropConfig } from "../../modules/strategy/btc-drop.types.js";
 
 export async function liveCycleRoutes(app: FastifyInstance, env: Env) {
   app.get("/summary", async (_request, reply) => {
@@ -19,6 +21,7 @@ export async function liveCycleRoutes(app: FastifyInstance, env: Env) {
     const rt = getRuntimeStateService();
     const cfg = await rt.getBotConfigRow();
     const market = autoLiveMarket(env, cfg.market);
+    const activeMarkets = autoLiveMarkets(env, cfg.market);
     let quoteCurrency = "";
     let referenceLastPrice: string | null = null;
     const dropBuyReferencePrices: string[] = [];
@@ -39,18 +42,51 @@ export async function liveCycleRoutes(app: FastifyInstance, env: Env) {
       /* referência de queda é opcional */
     }
 
+    const btcCfg = readBtcDropConfig(env);
+    let btcDropState: LiveCycleApiSummary["btcDropState"] = null;
+    if (btcCfg.enabled) {
+      try {
+        const { spec } = await getMarketSpecService().getSpecWithFetchedAt(btcCfg.market);
+        const view = await getBtcDropStateView(env, spec);
+        if (view) {
+          btcDropState = {
+            anchorPrice: view.anchorPrice,
+            nextBuyPrice: view.nextBuyPrice,
+            stepUsdt: view.stepUsdt,
+            baseAmount: view.baseAmount,
+            targetProfitPct: view.targetProfitPct,
+            estimatedQuoteValueAtNextBuy: view.estimatedQuoteValueAtNextBuy,
+            updatedAt: view.updatedAt,
+          };
+        }
+      } catch {
+        btcDropState = {
+          anchorPrice: null,
+          nextBuyPrice: null,
+          stepUsdt: btcCfg.stepUsdt,
+          baseAmount: btcCfg.baseAmount,
+          targetProfitPct: btcCfg.targetProfitPct,
+          estimatedQuoteValueAtNextBuy: null,
+          updatedAt: null,
+        };
+      }
+    }
+
     const payload: LiveCycleApiSummary = {
       ...base,
       liveTradingEnabled: env.ENABLE_LIVE_TRADING,
       runtimeStatus: cfg.runtimeStatus,
       executionMode: cfg.executionMode,
       market,
+      activeMarkets,
       quoteValue: effectiveAutoLiveQuoteBudget(env),
-      targetProfitPct: cfg.targetProfitPct.toString(),
+      targetProfitPct: btcCfg.enabled ? btcCfg.targetProfitPct : cfg.targetProfitPct.toString(),
       gridStepPct: cfg.gridStepPct.toString(),
       quoteCurrency,
       referenceLastPrice,
       dropBuyReferencePrices,
+      btcStrategyEnabled: btcCfg.enabled,
+      btcDropState,
     };
     return reply.send(payload);
   });

@@ -27,15 +27,18 @@ import {
   trCycleStatus,
   trExecutionLayer,
   trExecutionMode,
-  trMarketDataSource,
   trOrderSide,
   trOrderStatus,
   trOrderType,
   trRuntimeStatus,
 } from "./lib/translations.js";
-import { ChecksList, KvNum, PctStoredRow, StatCard, cycleStatusClass } from "./components/parts.js";
+import { ChecksList, KvNum, PctStoredRow, cycleStatusClass } from "./components/parts.js";
 import { OverviewAnalyticsBlock } from "./components/OverviewAnalyticsBlock.js";
 import { StrategyGridPanel } from "./components/StrategyGridPanel.js";
+import { BtcDropStrategyPanel, type BtcDropPanelSnapshot } from "./components/BtcDropStrategyPanel.js";
+import { RealOnlyDashboard } from "./components/RealOnlyDashboard.js";
+import { OperationalChecksPanel } from "./components/OperationalChecksPanel.js";
+import { RealOnlyHeader } from "./components/RealOnlyHeader.js";
 import { BrandLogo } from "./components/BrandLogo.js";
 
 type TabId = "overview" | "operation" | "market" | "fullauto" | "params" | "cycles" | "reconc" | "events";
@@ -71,11 +74,13 @@ type DataBag = {
   bal: Record<string, unknown> | null;
   reconc: Record<string, unknown> | null;
   liveCycle: Record<string, unknown> | null;
+  operational: Record<string, unknown> | null;
   ticker: Record<string, unknown>;
   specInfo: Record<string, unknown>;
+  marketTickers: Record<string, Record<string, unknown>>;
 };
 
-function LiveAutoPanel({ lc }: { lc: Record<string, unknown> | null }) {
+function LiveAutoPanel({ lc, btcStrategyEnabled }: { lc: Record<string, unknown> | null; btcStrategyEnabled?: boolean }) {
   if (!lc || typeof lc !== "object") return <p className="muted">Indisponível</p>;
   const pres = fullAutoStatusPresentation(lc);
   const checks = (lc.checks as Array<{ name: string; ok: boolean; message?: string }>) ?? [];
@@ -103,7 +108,9 @@ function LiveAutoPanel({ lc }: { lc: Record<string, unknown> | null }) {
         <KvNum label="Mercado" value={String(lc.market ?? "—")} mono={false} />
         <KvNum label="Valor por ordem (cotação)" value={String(lc.quoteValue ?? "—")} mono={false} />
         <PctStoredRow label="Lucro-alvo por ciclo" stored={lc.targetProfitPct} />
-        <PctStoredRow label="Passo da grelha (ilustrativo no resumo do painel)" stored={lc.gridStepPct} />
+        {!btcStrategyEnabled ? (
+          <PctStoredRow label="Passo da grelha (legado — inativo com BTC Drop)" stored={lc.gridStepPct} />
+        ) : null}
         {lc.referenceLastPrice != null && String(lc.referenceLastPrice).trim() !== "" ? (
           <KvNum
             label="Último (base dos alvos na queda)"
@@ -113,7 +120,7 @@ function LiveAutoPanel({ lc }: { lc: Record<string, unknown> | null }) {
         ) : null}
         {dropLevels.length > 0 ? (
           <KvNum
-            label="Alvos na queda (1.º–6.º degrau; ilustrativo — Auto LIVE compra ao mercado)"
+            label={btcStrategyEnabled ? "Alvos na queda (legado — BTC Drop usa níveis USDT)" : "Alvos na queda (legado)"}
             value={dropLevels.map((p, i) => `${i + 1}º: ${String(p)}${quoteCcy ? ` ${quoteCcy}` : ""}`).join(" · ")}
             mono={false}
           />
@@ -137,11 +144,25 @@ function LiveAutoPanel({ lc }: { lc: Record<string, unknown> | null }) {
   );
 }
 
-function BotParamsView({ cfg, rt }: { cfg: BotCfg; rt: Record<string, unknown> }) {
+function BotParamsView({
+  cfg,
+  rt,
+  btcStrategyEnabled,
+}: {
+  cfg: BotCfg;
+  rt: Record<string, unknown>;
+  btcStrategyEnabled: boolean;
+}) {
   return (
     <div className="params-sections">
       <div className="param-block">
         <h3>Estratégia</h3>
+        {btcStrategyEnabled ? (
+          <p className="muted small" style={{ marginBottom: 8 }}>
+            <strong>BTC Drop 2K</strong> ativa via <code>BTC_STRATEGY_ENABLED</code> no <code>.env</code>. Ordem (quote), passo da grelha e lucro-alvo abaixo são{" "}
+            <strong>legado/inativos</strong> para o Auto LIVE (ver variáveis <code>BTC_*</code> no servidor).
+          </p>
+        ) : null}
         <div className="kv-grid">
           <KvNum label="Mercado" value={cfg.market} mono={false} />
           <KvNum label="Ordem (quote)" value={cfg.orderQuoteSize} mono={false} />
@@ -166,17 +187,15 @@ function BotParamsView({ cfg, rt }: { cfg: BotCfg; rt: Record<string, unknown> }
         </div>
       </div>
       <div className="param-block">
-        <h3>Ambiente (só leitura)</h3>
+        <h3>Ambiente REAL ONLY (só leitura)</h3>
         <div className="kv-grid">
-          <KvNum label="Fonte de preço" value={trMarketDataSource(rt.marketDataSource)} mono={false} />
-          <KvNum label="Cache preço (ms)" value={rt.marketDataCacheTtlMs} mono={false} />
-          <KvNum label="Cache spec (ms)" value={rt.marketSpecCacheTtlMs} mono={false} />
-          <KvNum label="Fonte de saldo" value={trMarketDataSource(rt.portfolioBalanceSource)} mono={false} />
-          <KvNum label="Trading real (.env)" value={String(rt.enableLiveTrading)} mono={false} />
-          <KvNum label="Mercados permitidos (LIVE)" value={String(rt.liveMarketAllowlist ?? "—")} mono={false} />
-          <KvNum label="Cache saldo (ms)" value={rt.portfolioBalanceCacheTtlMs} mono={false} />
-          <KvNum label="Sondagem preço (ms)" value={rt.pricePollIntervalMs} mono={false} />
-          <KvNum label="Intervalo de conciliação (ms)" value={rt.reconciliationIntervalMs} mono={false} />
+          <KvNum label="Modo Genesis" value={String(rt.genesisMode ?? "REAL_ONLY")} mono={false} />
+          <KvNum label="Dados" value="CoinEx (MARKET_DATA_SOURCE=COINEX)" mono={false} />
+          <KvNum label="Saldo" value="CoinEx (PORTFOLIO_BALANCE_SOURCE=COINEX)" mono={false} />
+          <KvNum label="ENABLE_LIVE_TRADING" value={String(rt.enableLiveTrading)} mono={false} />
+          <KvNum label="ENABLE_AUTO_LIVE_WORKER" value={String(rt.enableAutoLiveWorker)} mono={false} />
+          <KvNum label="BTC Drop 2K" value={rt.btcStrategyEnabled ? `ativo (${rt.btcStrategyMarket})` : "inativo"} mono={false} />
+          <KvNum label="Allowlist LIVE" value={String(rt.liveMarketAllowlist ?? "—")} mono={false} />
         </div>
       </div>
     </div>
@@ -221,6 +240,7 @@ export default function DashboardApp() {
       ["/portfolio/balance", "bal"],
       ["/reconciliation/live-summary", "reconc"],
       ["/live-cycle/summary", "liveCycle"],
+      ["/bot/operational-status", "operational"],
     ];
     const settled = await Promise.allSettled(paths.map(([p]) => apiGet(p)));
     for (let i = 0; i < settled.length; i++) {
@@ -253,18 +273,43 @@ export default function DashboardApp() {
       return;
     }
     const cfg = botWrap.config as BotCfg;
-    const tickerRes = await apiGet(`/market/ticker/${encodeURIComponent(String(cfg.market))}`);
-    const specRes = await apiGet(`/market/info/${encodeURIComponent(String(cfg.market))}`);
+    const rtRow = botWrap.runtime as Record<string, unknown>;
+    const primaryMarket = String(cfg.market ?? "BTCUSDC").toUpperCase();
+    const lcBag = bag.liveCycle as Record<string, unknown> | null;
+    const activeFromWorker = Array.isArray(lcBag?.activeMarkets)
+      ? (lcBag!.activeMarkets as unknown[]).map((m) => String(m).trim().toUpperCase()).filter(Boolean)
+      : [];
+    const markets =
+      activeFromWorker.length > 0
+        ? [...new Set([primaryMarket, ...activeFromWorker])]
+        : [primaryMarket];
+
+    const tickerRes = await apiGet(`/market/ticker/${encodeURIComponent(primaryMarket)}`);
+    const specRes = await apiGet(`/market/info/${encodeURIComponent(primaryMarket)}`);
+    const extraTickerSettled = await Promise.allSettled(
+      markets.filter((m) => m !== primaryMarket).map((m) => apiGet(`/market/ticker/${encodeURIComponent(m)}`)),
+    );
     if (tickerRes.status === 401 || specRes.status === 401) {
       await apiPostLogout();
       invalidateSession();
       show("Sessão expirada ou sem permissão. Inicia sessão de novo.", "err");
       return;
     }
+    const marketTickers: Record<string, Record<string, unknown>> = {};
+    if (tickerRes.ok) marketTickers[primaryMarket] = tickerRes.data as Record<string, unknown>;
+    let extraIdx = 0;
+    for (const m of markets) {
+      if (m === primaryMarket) continue;
+      const res = extraTickerSettled[extraIdx++];
+      if (res.status === "fulfilled" && res.value.ok) {
+        marketTickers[m] = res.value.data as Record<string, unknown>;
+      }
+    }
     setData({
       ...bag,
       ticker: tickerRes.ok ? (tickerRes.data as Record<string, unknown>) : {},
       specInfo: specRes.ok ? (specRes.data as Record<string, unknown>) : {},
+      marketTickers,
     } as DataBag);
   }, [show, invalidateSession]);
 
@@ -306,11 +351,6 @@ export default function DashboardApp() {
 
   const rh = useMemo(() => reconcHealthSummary(data?.reconc ?? null), [data?.reconc]);
   const faPres = useMemo(() => fullAutoStatusPresentation(data?.liveCycle ?? null), [data?.liveCycle]);
-  const autoDecisionHint = useMemo(
-    () => trAutoDecision(data?.liveCycle?.lastDecision),
-    [data?.liveCycle?.lastDecision],
-  );
-
   const overviewStrategy = useMemo(() => {
     if (!cfg || !data) return null;
     const mkt = String(cfg.market ?? "BTCUSDC");
@@ -374,16 +414,43 @@ export default function DashboardApp() {
     };
   }, [cfg, data]);
 
+  const btcStrategyEnabled = Boolean(data?.liveCycle && (data.liveCycle as Record<string, unknown>).btcStrategyEnabled);
+
+  const btcDropSnapshot = useMemo((): BtcDropPanelSnapshot | null => {
+    const lc = data?.liveCycle as Record<string, unknown> | undefined;
+    const rtLayer = String(data?.bot?.runtime?.executionLayer ?? "");
+    if (!lc) return null;
+    const drop = lc.btcDropState as Record<string, unknown> | null | undefined;
+    return {
+      enabled: Boolean(lc.btcStrategyEnabled),
+      market: String(lc.market ?? "BTCUSDT"),
+      anchorPrice: drop?.anchorPrice != null ? String(drop.anchorPrice) : null,
+      nextBuyPrice: drop?.nextBuyPrice != null ? String(drop.nextBuyPrice) : null,
+      stepUsdt: String(drop?.stepUsdt ?? "2000"),
+      baseAmount: String(drop?.baseAmount ?? "0.0001"),
+      targetProfitPct: String(drop?.targetProfitPct ?? lc.targetProfitPct ?? "0.02"),
+      estimatedQuoteValueAtNextBuy:
+        drop?.estimatedQuoteValueAtNextBuy != null ? String(drop.estimatedQuoteValueAtNextBuy) : null,
+      updatedAt: drop?.updatedAt != null ? String(drop.updatedAt) : null,
+      executionLayer: rtLayer,
+      liveTradingEnabled: Boolean(lc.liveTradingEnabled),
+    };
+  }, [data?.liveCycle, data?.bot?.runtime]);
+
   const filteredEvents = useMemo(() => {
     const items = (data?.eRecent?.items ?? []) as Array<Record<string, unknown>>;
     if (eventFilter === "error") return items.filter((e) => String(e.level).toUpperCase() === "ERROR");
     if (eventFilter === "live")
-      return items.filter(
-        (e) =>
-          String(e.type ?? "")
-            .toUpperCase()
-            .includes("LIVE") || String(e.message ?? "").toUpperCase().includes("LIVE"),
-      );
+      return items.filter((e) => {
+        const t = String(e.type ?? "").toUpperCase();
+        return (
+          t.includes("LIVE") ||
+          t.includes("BTC_DROP") ||
+          t.includes("BALANCE") ||
+          t.includes("MARKET_SPEC") ||
+          t.includes("RECONCIL")
+        );
+      });
     if (eventFilter === "cycle")
       return items.filter((e) =>
         String(e.type ?? "")
@@ -463,6 +530,39 @@ export default function DashboardApp() {
     }
   };
 
+  const resetTradingData = async () => {
+    if (
+      !window.confirm(
+        "Apagar TODO o histórico local: ciclos, ordens, negócios, eventos e âncoras? Em seguida o bot tenta 1 compra inicial a MERCADO (se o motor estiver RUNNING e LIVE ativo). Isto NÃO cancela ordens já abertas na CoinEx.",
+      )
+    ) {
+      return;
+    }
+    const typed = window.prompt(
+      'Para confirmar, escreva exatamente: RESET_ALL_TRADING_DATA',
+      "",
+    );
+    if (typed !== "RESET_ALL_TRADING_DATA") {
+      if (typed !== null) show("Confirmação incorreta — reset cancelado.", "err");
+      return;
+    }
+    try {
+      const res = await apiPost<{
+        ok?: boolean;
+        message?: string;
+        counts?: Record<string, number>;
+        bootstrap?: { ok?: boolean; message?: string; cycleId?: string };
+      }>("/bot/reset-trading-data", { confirm: "RESET_ALL_TRADING_DATA", bootstrapBuy: true, stopMotor: false });
+      const n = res.counts
+        ? `${res.counts.tradeCycles ?? 0} ciclos, ${res.counts.orders ?? 0} ordens`
+        : "dados";
+      show(res.message ?? `Reset concluído (${n}).`, "ok");
+      await loadAll();
+    } catch (e) {
+      show(e instanceof Error ? e.message : String(e), "err");
+    }
+  };
+
   const tabs: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão geral" },
     { id: "operation", label: "Operação" },
@@ -504,7 +604,7 @@ export default function DashboardApp() {
     <>
       {!authRequired ? (
         <div className="banner-stack">
-          <div className="banner banner-dry" role="status">
+          <div className="banner banner-auth-off" role="status">
             <strong>Dashboard sem login.</strong> No servidor está <code className="mono">DASHBOARD_AUTH_ENABLED=false</code>{" "}
             (omissão). Quem abrir este URL (incluindo guia anónima) vê o painel. Para exigir email + código 2FA: liga{" "}
             <code className="mono">DASHBOARD_AUTH_ENABLED=true</code> e configura JWT, utilizadores e SMTP no{" "}
@@ -520,7 +620,7 @@ export default function DashboardApp() {
             </span>
             <div className="brand-text">
               <h1 className="brand-title">Genesis SPOT</h1>
-              <p className="tagline">CoinEx Spot Bot · ciclos isolados</p>
+              <p className="tagline">Real CoinEx Mode · BTC Drop 2K · ciclos isolados</p>
             </div>
           </div>
           <div className="header-toolbar">
@@ -545,21 +645,15 @@ export default function DashboardApp() {
               <time className="mono">{new Date().toLocaleString("pt-BR")}</time>
             </span>
           </div>
-          <div className="status-strip" aria-label="Estado global">
-            <span className="status-chip">
-              <span className="muted">Motor</span> <strong>{cfg ? trRuntimeStatus(rt?.runtimeStatus) : "—"}</strong>
-            </span>
-            <span className="status-chip">
-              <span className="muted">Modo</span> <strong>{cfg ? trExecutionMode(rt?.executionMode) : "—"}</strong>
-            </span>
-            <span className="status-chip">
-              <span className="muted">Camada</span> <strong>{cfg ? trExecutionLayer(rt?.executionLayer) : "—"}</strong>
-            </span>
-            <span className="status-chip">
-              <span className="muted">Mercado</span> <strong>{cfg ? trMarketDataSource(rt?.marketDataSource) : "—"}</strong>
-            </span>
-            <span className={`badge ${cfg?.enabled ? "badge-good" : "badge-neutral"}`}>{cfg?.enabled ? "Ativado: sim" : "Ativado: não"}</span>
-          </div>
+          {cfg && rt ? (
+            <RealOnlyHeader
+              runtimeStatus={rt.runtimeStatus}
+              executionLayer={rt.executionLayer}
+              liveTradingEnabled={Boolean(rt.enableLiveTrading)}
+              autoWorkerOn={Boolean(rt.enableAutoLiveWorker)}
+              killSwitch={String(rt.runtimeStatus) === "KILL_SWITCH"}
+            />
+          ) : null}
         </div>
       </header>
 
@@ -581,29 +675,22 @@ export default function DashboardApp() {
 
         {activeTab === "overview" && data && cfg && rt && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
-            <div className="grid-cards">
-              <StatCard label="Motor (runtime)" value={trRuntimeStatus(rt.runtimeStatus)} hint="Persistido no servidor" tone={rt.runtimeStatus === "RUNNING" ? "default" : "warn"} />
-              <StatCard label="Execução" value={trExecutionMode(rt.executionMode)} hint="Definição persistida" tone={rt.executionMode === "LIVE" ? "danger" : "warn"} />
-              <StatCard label="Camada" value={trExecutionLayer(rt.executionLayer)} hint="Onde correm as ordens" tone={rt.executionLayer === "LIVE" ? "danger" : "default"} />
-              <StatCard label="Mercado" value={String(cfg.market ?? "—")} />
-              <StatCard label="Preço" value={data.ticker?.last != null ? String(data.ticker.last) : "—"} hint={priceSourceLabel(data.ticker?.priceSource)} />
-              <StatCard label="Fonte do preço" value={trMarketDataSource(data.ticker?.priceSource) || "—"} />
-              <StatCard label="Ciclos abertos" value={String((data.cSum as { openCycles?: number })?.openCycles ?? 0)} />
-              <StatCard
-                label="Ordens abertas"
-                value={String(openOrders)}
-                hint="Base de dados deste bot: abertas + parciais + pendentes. Zero = nenhuma ordem ativa registada agora."
-              />
-              <StatCard label="Conciliação" value={rh.label} hint="Ordens na CoinEx" tone={rh.kind === "good" ? "default" : "danger"} />
-              <StatCard
-                label="Automático"
-                value={faPres.badge}
-                hint={autoDecisionHint || undefined}
-                tone={
-                  (data.liveCycle?.status as string) === "RUNNING" ? "danger" : (data.liveCycle?.status as string) === "BLOCKED" ? "warn" : "default"
-                }
-              />
-            </div>
+            <RealOnlyDashboard
+              cfg={cfg}
+              rt={rt}
+              ticker={data.ticker}
+              specInfo={data.specInfo}
+              bal={data.bal}
+              reconc={data.reconc}
+              liveCycle={data.liveCycle}
+              operational={data.operational}
+              btcDrop={btcDropSnapshot}
+              openOrders={openOrders}
+              openCycles={Number((data.cSum as { openCycles?: number })?.openCycles ?? 0)}
+              marketTickers={data.marketTickers ?? {}}
+              cSum={data.cSum}
+              cyclesRecent={data.cRecent?.items as unknown[] | undefined}
+            />
             {cfg && overviewStrategy ? (
               <OverviewAnalyticsBlock
                 cycles={data.cRecent?.items as unknown[] | undefined}
@@ -611,6 +698,13 @@ export default function DashboardApp() {
                 strategy={overviewStrategy}
                 baseBalanceLine={fmtBalLine(pickAsset(cx?.balances, base))}
                 baseSymbol={base}
+              />
+            ) : null}
+            {btcStrategyEnabled && btcDropSnapshot ? (
+              <BtcDropStrategyPanel
+                snapshot={btcDropSnapshot}
+                quoteCcy={btcDropSnapshot.market ? parseSpotMarketPair(btcDropSnapshot.market).quote : quote}
+                onRefresh={() => void loadAll()}
               />
             ) : null}
           </section>
@@ -621,10 +715,15 @@ export default function DashboardApp() {
             <div className="panel panel-controls">
               <h2 className="panel-title">Controlo operacional</h2>
               <p className="panel-lead panel-lead-op">
-                Estes comandos alteram o <strong>estado do motor</strong> e o <strong>modo de execução</strong> guardados no servidor.
+                <strong>REAL ONLY:</strong> ON/OFF do motor no Postgres. Não existe modo observação — motor <code>OFF</code> = sem ordens;{" "}
+                <code>RUNNING</code> + travas OK = ordens reais CoinEx.
               </p>
               <div className="alert alert-warn">
-                <strong>Paragem de emergência</strong> não cancela por si só as ordens já abertas na CoinEx, salvo outras rotas o fazerem.
+                <strong>ENABLE_AUTO_LIVE_WORKER</strong> é controlado pelo <code>.env</code> do servidor (
+                <strong>{rt.enableAutoLiveWorker ? "true" : "false"}</strong>). Não há botão na API para ligar o worker automático.
+              </div>
+              <div className="alert alert-warn">
+                <strong>Paragem de emergência</strong> não cancela por si só as ordens já abertas na CoinEx.
               </div>
               <div className="mode-line">
                 <span className="muted">Motor</span>
@@ -649,8 +748,28 @@ export default function DashboardApp() {
                 <button type="button" className="btn btn-kill" onClick={() => void opAction("kill")}>
                   Paragem de emergência
                 </button>
+                <button type="button" className="btn" onClick={() => void resetCircuit()}>
+                  Reset circuit breaker
+                </button>
+                <button type="button" className="btn btn-kill" onClick={() => void resetTradingData()}>
+                  Apagar histórico (ciclos/estatísticas)
+                </button>
               </div>
+              <p className="muted small" style={{ marginTop: 12 }}>
+                Reset dos níveis BTC Drop: aba Automático ou Ciclos. «Apagar histórico» limpa a base local; não cancela ordens na CoinEx.
+              </p>
             </div>
+            <OperationalChecksPanel
+              operational={
+                data.operational as {
+                  checks?: Array<{ id: string; ok: boolean; label: string; detail?: string }>;
+                  readyForAutoLive?: boolean;
+                  blockingSummary?: string[];
+                } | null
+              }
+              liveCycle={data.liveCycle}
+              enableAutoLiveWorker={Boolean(rt.enableAutoLiveWorker)}
+            />
           </section>
         )}
 
@@ -780,6 +899,11 @@ export default function DashboardApp() {
 
         {activeTab === "fullauto" && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
+            <BtcDropStrategyPanel
+              snapshot={btcDropSnapshot}
+              quoteCcy={btcDropSnapshot?.market ? parseSpotMarketPair(btcDropSnapshot.market).quote : quote}
+              onRefresh={() => void loadAll()}
+            />
             <div id="full-auto-card" className={fullCardClass}>
               <h2 className="panel-title">Operação automática na CoinEx</h2>
               <div className="alert alert-danger">
@@ -791,7 +915,7 @@ export default function DashboardApp() {
                 </button>
               </div>
               <div className="fullauto-body" aria-live="polite">
-                <LiveAutoPanel lc={data?.liveCycle ?? null} />
+                <LiveAutoPanel lc={data?.liveCycle ?? null} btcStrategyEnabled={btcStrategyEnabled} />
               </div>
             </div>
           </section>
@@ -829,7 +953,7 @@ export default function DashboardApp() {
                 venda (limite) sobre a média da compra (mais margem de taxas).
               </p>
               {!editingConfig ? (
-                <div className={`params-sections ${!cfg ? "muted" : ""}`}>{cfg ? <BotParamsView cfg={cfg} rt={rt} /> : <p className="muted">Carregando…</p>}</div>
+                <div className={`params-sections ${!cfg ? "muted" : ""}`}>{cfg ? <BotParamsView cfg={cfg} rt={rt} btcStrategyEnabled={btcStrategyEnabled} /> : <p className="muted">Carregando…</p>}</div>
               ) : (
                 <form
                   className="config-form"
@@ -858,7 +982,12 @@ export default function DashboardApp() {
 
         {activeTab === "cycles" && data && cfg && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
-            <StrategyGridPanel strategy={overviewStrategy} />
+            <BtcDropStrategyPanel
+              snapshot={btcDropSnapshot}
+              quoteCcy={btcDropSnapshot?.market ? parseSpotMarketPair(btcDropSnapshot.market).quote : quote}
+              onRefresh={() => void loadAll()}
+            />
+            {!btcStrategyEnabled ? <StrategyGridPanel strategy={overviewStrategy} /> : null}
             <div className="panel panel-cycles-orders">
               <h2 className="panel-title">Ciclos e ordens recentes</h2>
               <p className="muted small" style={{ marginBottom: 16 }}>

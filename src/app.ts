@@ -15,6 +15,7 @@ import { portfolioRoutes } from "./api/routes/portfolio.routes.js";
 import { marketRoutes } from "./api/routes/market.routes.js";
 import { reconciliationRoutes } from "./api/routes/reconciliation.routes.js";
 import { liveCycleRoutes } from "./api/routes/live-cycle.routes.js";
+import { btcDropRoutes } from "./api/routes/btc-drop.routes.js";
 import { dashboardRoutes } from "./api/routes/dashboard.routes.js";
 import { isDashboardAuthEnabled } from "./modules/auth/dashboard-auth.service.js";
 
@@ -27,6 +28,7 @@ async function registerApiRoutes(instance: FastifyInstance, env: Env) {
   await instance.register(async (i) => marketRoutes(i), { prefix: "/market" });
   await instance.register(async (i) => reconciliationRoutes(i), { prefix: "/reconciliation" });
   await instance.register(async (i) => liveCycleRoutes(i, env), { prefix: "/live-cycle" });
+  await instance.register(async (i) => btcDropRoutes(i, env), { prefix: "/strategy/btc-drop" });
 }
 
 export async function buildApp(env: Env) {

@@ -69,7 +69,7 @@ export async function importCoinexDealsAsFills(orderId: string, deals: CoinexUse
   let inserted = 0;
   for (const d of deals) {
     const value = new Decimal(d.price).mul(new Decimal(d.amount)).toFixed(12);
-    const feeCcy = d.feeCcy || "USDT";
+    const feeCcy = d.feeCcy || "USDC";
     try {
       await prisma.orderFill.create({
         data: {

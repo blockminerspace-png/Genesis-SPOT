@@ -1,6 +1,8 @@
-# Genesis SPOT (até Fase 1.7)
+# Genesis SPOT — REAL ONLY
 
-Monólito modular em **Node.js + TypeScript + Fastify + Prisma + PostgreSQL** para um bot **spot** com **ciclos isolados** (desenho técnico; não é recomendação financeira). **Sem simulador:** ticker, spec e saldo vêm da CoinEx; `execution_mode` na base é só **LIVE**.
+Monólito modular em **Node.js + TypeScript + Fastify + Prisma + PostgreSQL** para um bot **spot** com **ciclos isolados** (desenho técnico; não é recomendação financeira).
+
+**Genesis SPOT é REAL ONLY:** sem DRY_RUN, sem SIMULATED, sem saldo fake, sem ticker fake. Ticker, market spec e saldo vêm **só da CoinEx**; ordens são **LIVE** na CoinEx quando as travas estão OK. O motor (`runtime_status`) é apenas **ON/OFF operacional** — `OFF` não é “observação”, é motor parado.
 
 ## Requisitos
 
@@ -96,60 +98,7 @@ Variáveis principais: `ENABLE_LIVE_TRADING`, `LIVE_MARKET_ALLOWLIST` (CSV), `LI
 - **`POST /orders/preview`** — validação sem enviar ordem.
 - **`POST /orders/live-test`** — ordem real manual com teto `min(LIVE_MAX_ORDER_QUOTE_VALUE, LIVE_TEST_MAX_QUOTE_VALUE)` e `"confirm":"LIVE_TEST_ORDER"`.
 
-### Prática real ~1 USDT (`/live-practice`)
-
-Fluxo **manual** para LIMIT BUY/SELL na CoinEx com teto em quote definido por `LIVE_PRACTICE_QUOTE_VALUE` (por omissão `1` USDT), **sem** ativar `ENABLE_AUTO_LIVE_WORKER`. Usa `LiveSafetyGuard` + snapshot CoinEx como as outras rotas LIVE.
-
-| Variável | Função |
-|----------|--------|
-| `LIVE_PRACTICE_QUOTE_VALUE` | Teto em **quote** (ex.: `1`) para BUY e alvo aproximado para SELL |
-| `LIVE_PRACTICE_MARKET` | Par (ex.: `BTCUSDT`) — tem de constar em `LIVE_MARKET_ALLOWLIST` |
-| `LIVE_PRACTICE_CONFIRM_PHRASE` | Frase exata exigida no JSON (`confirm`) e no painel (prompt) |
-
-**Chave API CoinEx (sem vazar credenciais):**
-
-1. Na CoinEx, crie uma API key **sem permissão de levantamento (withdraw)** e restrinja a IP se disponível.
-2. Preencha **apenas** `COINEX_ACCESS_ID` e `COINEX_SECRET_KEY` no `.env` local — **nunca** commite o ficheiro; se uma chave for exposta, **revogue-a** na CoinEx e crie outra.
-3. Para prática: `ENABLE_LIVE_TRADING=true`, `ENABLE_AUTO_LIVE_WORKER=false`, `MARKET_DATA_SOURCE=COINEX`, `execution_mode=LIVE` e `runtime_status=RUNNING` no Postgres, chaves válidas e reconciliador saudável. **`ENABLE_AUTO_LIVE_WORKER` deve permanecer `false`** para este fluxo manual; com `true`, as rotas bloqueiam por segurança.
-
-**Notional mínimo:** se a CoinEx exigir `min_amount` / `min_value` acima do que ~`LIVE_PRACTICE_QUOTE_VALUE` USDT permite, o preview e o envio bloqueiam com mensagem clara (não se “força” o arredondamento contra o `MarketSpec`).
-
-| Método | Rota | Descrição |
-|--------|------|------------|
-| GET | `/live-practice/status` | Flags, ticker, spec, saldo CoinEx, `canPractice`, `blockingReasons`, `confirmPhraseRequired`, aviso fixo em inglês |
-| POST | `/live-practice/preview-buy` | Corpo `{ "confirm": "<frase .env>" }` — plano + `runLivePlacePrecheck`, **sem** ordem |
-| POST | `/live-practice/buy` | Mesmas travas que LIVE manual + reconciliação; LIMIT BUY; `client_id` prefixo `LIVE_PRACTICE_BUY_` |
-| POST | `/live-practice/preview-sell` | Idem, lado venda até ~quote configurado |
-| POST | `/live-practice/sell` | LIMIT SELL; `LIVE_PRACTICE_SELL_` |
-| POST | `/live-practice/cancel-open` | Cancela só ordens abertas com `client_id` começado por `LIVE_PRACTICE_` |
-
-Eventos: `LIVE_PRACTICE_STATUS_CHECKED`, `LIVE_PRACTICE_PREVIEW_BUY`, `LIVE_PRACTICE_PREVIEW_SELL`, `LIVE_PRACTICE_BUY_PLACING`, `LIVE_PRACTICE_BUY_PLACED`, `LIVE_PRACTICE_SELL_PLACING`, `LIVE_PRACTICE_SELL_PLACED`, `LIVE_PRACTICE_BLOCKED`, `LIVE_PRACTICE_CANCEL_REQUESTED`, `LIVE_PRACTICE_CANCELLED`, `LIVE_PRACTICE_ERROR`.
-
-Exemplos `curl` (substitua a frase se alterou `LIVE_PRACTICE_CONFIRM_PHRASE` no `.env`):
-
-```bash
-curl -X POST http://localhost:3000/live-practice/preview-buy \
-  -H "Content-Type: application/json" \
-  -d '{"confirm":"I_UNDERSTAND_THIS_IS_REAL_MONEY"}'
-
-curl -X POST http://localhost:3000/live-practice/buy \
-  -H "Content-Type: application/json" \
-  -d '{"confirm":"I_UNDERSTAND_THIS_IS_REAL_MONEY"}'
-
-curl -X POST http://localhost:3000/live-practice/preview-sell \
-  -H "Content-Type: application/json" \
-  -d '{"confirm":"I_UNDERSTAND_THIS_IS_REAL_MONEY"}'
-
-curl -X POST http://localhost:3000/live-practice/sell \
-  -H "Content-Type: application/json" \
-  -d '{"confirm":"I_UNDERSTAND_THIS_IS_REAL_MONEY"}'
-
-curl -X POST http://localhost:3000/live-practice/cancel-open \
-  -H "Content-Type: application/json" \
-  -d '{"confirm":"I_UNDERSTAND_THIS_IS_REAL_MONEY"}'
-```
-
-Não existe worker de ciclos simulado; o **Auto LIVE** (`ENABLE_AUTO_LIVE_WORKER`) é o fluxo automático de ciclos reais.
+O painel **não** expõe fluxos de simulação nem “modo observação”. Para testar sem o worker automático: `ENABLE_AUTO_LIVE_WORKER=false` e motor `OFF` ou `PAUSED_BUYS`; para operar: `RUNNING` + travas OK + `ENABLE_AUTO_LIVE_WORKER=true`.
 
 ## Reconciliação LIVE (Fase 1.6.6)
 
@@ -185,11 +134,35 @@ CoinEx como **fonte de verdade** para ordens com `exchange_order_id` numérico (
 | `PORTFOLIO_BALANCE_SOURCE` | **`COINEX` ou `BOTH`** (obrigatório para o Auto LIVE) |
 | `AUTO_LIVE_WORKER_INTERVAL_MS`, `AUTO_LIVE_MIN_RECONCILIATION_SUCCESS_AGE_MS`, `AUTO_LIVE_MAX_OPEN_CYCLES`, `AUTO_LIVE_COOLDOWN_MS`, … | Ver `.env.example` |
 
-No **Postgres** (`bot_configs`, painel Parâmetros): `grid_step_pct` define a **compra** limite (fração abaixo do último, ex. `0.05` = 5%); `target_profit_pct` + `fee_buffer_pct` definem o **preço alvo de venda** sobre a média de compra (ex. `0.02` = +2% antes da margem de taxas).
+Com **`BTC_STRATEGY_ENABLED=true`**, o Auto LIVE usa a **estratégia BTC Drop 2K** (ver secção abaixo) em vez da grelha percentual + compra a mercado. Os campos `grid_step_pct` / `order_quote_size` no Postgres ficam **legado/inativos** para compras automáticas.
 
-**`AUTO_LIVE_ORDER_QUOTE_VALUE=1`** pode falhar se `min_amount` / `min_value` da CoinEx exigirem notional maior; ajuste ou aumente `LIVE_MAX_ORDER_QUOTE_VALUE` de forma coerente.
+No **Postgres** (`bot_configs`, painel Parâmetros): sem BTC Drop, `grid_step_pct` alimenta o resumo visual; `target_profit_pct` + `fee_buffer_pct` definem o alvo de venda. Com BTC Drop, o lucro-alvo de venda vem de **`BTC_TARGET_PROFIT_PCT`** no `.env`.
 
-Recomenda-se correr primeiro **`/live-practice`** (prática manual ~1 USDT) antes do FULL Auto LIVE.
+**`AUTO_LIVE_ORDER_QUOTE_VALUE=1`** e **`LIVE_MAX_ORDER_QUOTE_VALUE=1`** bloqueiam a BTC Drop 2K: **0,0001 BTC** a ~100 000 USDT ≈ **10 USDT** por ordem. Use algo como `LIVE_MAX_ORDER_QUOTE_VALUE=15` e `AUTO_LIVE_ORDER_QUOTE_VALUE=15` (e `LIVE_MAX_DAILY_QUOTE_VOLUME` proporcional).
+
+## Estratégia BTC Drop 2K
+
+Mercado único (**`BTCUSDT`** por omissão). Cada vez que o preço atinge o **próximo nível** (anchor − N×2000 USDT), o bot abre um **ciclo isolado** com **compra LIMIT** de **0,0001 BTC** e, após fill real (reconciliador), **venda LIMIT** em **+2%** sobre o preço médio de entrada (+ `fee_buffer_pct`).
+
+| Variável | Função |
+|----------|--------|
+| `BTC_STRATEGY_ENABLED` | `true` ativa a estratégia |
+| `BTC_STRATEGY_MARKET` | Par (ex. `BTCUSDT`) — deve estar em `LIVE_MARKET_ALLOWLIST` |
+| `BTC_DROP_BUY_STEP_USDT` | Queda entre níveis (ex. `2000`) |
+| `BTC_ORDER_BASE_AMOUNT` | Lote fixo em BTC (ex. `0.0001`) |
+| `BTC_TARGET_PROFIT_PCT` | Lucro-alvo na venda (ex. `0.02` = 2%) |
+| `BTC_STRATEGY_ANCHOR_MODE` | `LAST_HIGH` — sobe o anchor quando não há ciclos abertos |
+
+**Exemplo** (BTC ≈ 100 000 USDT): 1.º nível de compra ≈ 98 000 → compra 0,0001 BTC → venda alvo ≈ 99 960 (+2% sobre 98 000). Próximo nível ≈ 96 000, etc. Cada compra é um ciclo **separado** (saldo não se mistura).
+
+- Estado persistido: tabela `btc_drop_strategy_state` (anchor, próximo nível, passo, lote).
+- **Primeiro tick** após arranque: só inicializa níveis (sem comprar).
+- API: **`GET /strategy/btc-drop/state`**, **`POST /strategy/btc-drop/reset`** (corpo `{ "confirm": "RESET_BTC_DROP_WITH_OPEN_CYCLES" }` se houver ciclos abertos).
+- Painel: card **«Estratégia BTC Drop 2K»** (Ciclos / Automático) + reset de níveis.
+
+**Antes de LIVE:** motor `OFF` ou `ENABLE_AUTO_LIVE_WORKER=false`, validar spec/mínimos CoinEx para 0,0001 BTC, ajustar tetos `.env`, observar eventos `BTC_DROP_*` e `/live-cycle/summary`.
+
+Antes do Auto LIVE em produção, valida o checklist em **`GET /bot/operational-status`** e no painel (Visão geral).
 
 ### Travas (resumo)
 
@@ -202,17 +175,23 @@ Recomenda-se correr primeiro **`/live-practice`** (prática manual ~1 USDT) ante
 | Ciclo | Sem `MANUAL_REVIEW` aberto; sem duplicar BUY/SELL (`client_id` determinístico `LIVE_AUTO_BUY_<cycle_id>`, `LIVE_AUTO_SELL_<cycle_id>`); `Prisma` transação ao criar ciclo antes do BUY |
 | Risco | `AUTO_LIVE_MAX_OPEN_CYCLES`, cooldown após terminal, `AUTO_LIVE_ALLOW_NEW_BUY_WITH_OPEN_SELL`, `LIVE_MAX_*`, saldo USDT mínimo (`min_quote_balance` no Postgres) |
 
-### Arranque sugerido (exemplo)
+### Arranque sugerido (BTC Drop 2K)
 
 ```env
 ENABLE_LIVE_TRADING=true
 ENABLE_AUTO_LIVE_WORKER=true
 AUTO_LIVE_CONFIRM_ENV=I_UNDERSTAND_THIS_BOT_CAN_TRADE_REAL_MONEY
-AUTO_LIVE_ORDER_QUOTE_VALUE=1
-LIVE_MAX_ORDER_QUOTE_VALUE=1
-LIVE_MAX_DAILY_QUOTE_VOLUME=3
+BTC_STRATEGY_ENABLED=true
+BTC_STRATEGY_MARKET=BTCUSDT
+BTC_DROP_BUY_STEP_USDT=2000
+BTC_ORDER_BASE_AMOUNT=0.0001
+BTC_TARGET_PROFIT_PCT=0.02
+LIVE_MARKET_ALLOWLIST=BTCUSDT
+LIVE_MAX_ORDER_QUOTE_VALUE=15
+AUTO_LIVE_ORDER_QUOTE_VALUE=15
+LIVE_MAX_DAILY_QUOTE_VOLUME=45
 MARKET_DATA_SOURCE=COINEX
-PORTFOLIO_BALANCE_SOURCE=BOTH
+PORTFOLIO_BALANCE_SOURCE=COINEX
 ```
 
 ```sql
@@ -241,7 +220,7 @@ Erros **inesperados** no tick incrementam `consecutiveErrors`; ao atingir `AUTO_
 
 ## Interface
 
-**http://localhost:3000** — painel com **Mercado / Preço / Fonte / Execution / Layer**, **card de spec**, **saldo CoinEx read-only**, **Prática real 1 USDT** (`/live-practice/status` + ações com confirmação), **Reconciliação LIVE (1.6.6)**, **FULL AUTO LIVE (1.7)** (`/live-cycle/summary` + reset de circuito), `runtime_status`, reconciliador + Auto LIVE em paralelo.
+**http://localhost:3000** — painel **REAL ONLY**: badges Real CoinEx Mode, saldo CoinEx, BTC Drop 2K, checklist operacional, Full Auto LIVE central, reconciliador, eventos `LIVE_*` / `BTC_DROP_*`.
 
 ## API (resumo)
 
@@ -260,8 +239,7 @@ Erros **inesperados** no tick incrementam `consecutiveErrors`; ao atingir `AUTO_
 
 ### Outros
 
-- `GET /live-practice/status` — estado da prática manual LIVE (~1 USDT): flags, ticker, spec, saldo CoinEx, bloqueios, frase de confirmação esperada.
-- `POST /live-practice/preview-buy` | `preview-sell` | `buy` | `sell` | `cancel-open` — ver secção **Prática real ~1 USDT**; corpo JSON com `confirm` igual a `LIVE_PRACTICE_CONFIRM_PHRASE`.
+- `GET /bot/operational-status` — checklist REAL ONLY (env + Postgres + worker).
 - `GET /live-cycle/summary` — FULL Auto LIVE: `status`, `checks` (incl. `reconciliation_healthy`), `liveTradingEnabled`, `runtimeStatus`, `executionMode`, `market`, `quoteValue`, `targetProfitPct`, últimos ticks/erros/circuito.
 - `POST /live-cycle/reset-circuit-breaker` — repõe circuit breaker em memória (não altera Postgres).
 - `GET /reconciliation/live-summary` — estado do último tick do worker de reconciliação LIVE.

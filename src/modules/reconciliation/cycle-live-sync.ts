@@ -7,7 +7,8 @@ function quoteAssetFromMarket(market: string): string {
   const m = market.toUpperCase();
   if (m.endsWith("USDT")) return "USDT";
   if (m.endsWith("USDC")) return "USDC";
-  return "USDT";
+  if (m.endsWith("USD")) return "USD";
+  return "USDC";
 }
 
 function baseAssetFromMarket(market: string): string {

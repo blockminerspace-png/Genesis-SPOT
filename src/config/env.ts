@@ -15,14 +15,8 @@ const envSchema = z.object({
   COINEX_ACCESS_ID: z.string().optional().default(""),
   COINEX_SECRET_KEY: z.string().optional().default(""),
 
-  /**
-   * Só CoinEx em runtime. Aceita `SIMULATED` / `BOTH` legados no `.env` e normaliza para `COINEX`
-   * para não rebentar o arranque após remover o simulador.
-   */
-  MARKET_DATA_SOURCE: z
-    .enum(["COINEX", "SIMULATED"])
-    .default("COINEX")
-    .transform((): "COINEX" => "COINEX"),
+  /** Genesis SPOT REAL ONLY: ticker só via CoinEx. */
+  MARKET_DATA_SOURCE: z.enum(["COINEX"]).default("COINEX"),
 
   /** TTL do cache em memória do ticker (CoinEx ou fallback). */
   MARKET_DATA_CACHE_TTL_MS: z.coerce.number().int().min(200).max(60_000).default(2000),
@@ -30,11 +24,8 @@ const envSchema = z.object({
   /** TTL do cache em memória do market spec (precisão / mínimos / fees). */
   MARKET_SPEC_CACHE_TTL_MS: z.coerce.number().int().min(5_000).max(3_600_000).default(120_000),
 
-  /** Saldos: só CoinEx. `BOTH` / `SIMULATED` no `.env` são aceites e tratados como `COINEX`. */
-  PORTFOLIO_BALANCE_SOURCE: z
-    .enum(["COINEX", "BOTH", "SIMULATED"])
-    .default("COINEX")
-    .transform((): "COINEX" => "COINEX"),
+  /** Genesis SPOT REAL ONLY: saldo só via CoinEx. */
+  PORTFOLIO_BALANCE_SOURCE: z.enum(["COINEX"]).default("COINEX"),
   /** Cache do snapshot CoinEx em GET /portfolio/balance. */
   PORTFOLIO_BALANCE_CACHE_TTL_MS: z.coerce.number().int().min(1_000).max(120_000).default(5_000),
 
@@ -71,7 +62,7 @@ const envSchema = z.object({
     .default("false")
     .transform((v) => v === "true" || v === "1"),
   AUTO_LIVE_WORKER_INTERVAL_MS: z.coerce.number().int().min(3_000).max(120_000).default(8000),
-  /** Teto em quote por ciclo Auto LIVE (USDT/USDC conforme par); comparado com `LIVE_MAX_ORDER_QUOTE_VALUE`. */
+  /** Teto em quote por ciclo Auto LIVE (USDC/USDT conforme par); comparado com `LIVE_MAX_ORDER_QUOTE_VALUE`. */
   AUTO_LIVE_ORDER_QUOTE_VALUE: z.coerce.string().default("1"),
   /**
    * Legado: o Auto LIVE usa `target_profit_pct` de `bot_configs` (Parâmetros) na venda.
@@ -124,6 +115,18 @@ const envSchema = z.object({
   BOT_FEE_BUFFER_PCT: z.coerce.string().default("0.002"),
   BOT_PRICE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(3000),
   BOT_RECONCILIATION_INTERVAL_MS: z.coerce.number().int().positive().default(10000),
+
+  /** Estratégia BTC Drop 2K (queda absoluta em USDT + lote fixo em BTC). */
+  BTC_STRATEGY_ENABLED: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
+  BTC_STRATEGY_MARKET: z.string().default("BTCUSDT"),
+  BTC_DROP_BUY_STEP_USDT: z.coerce.string().default("2000"),
+  BTC_ORDER_BASE_AMOUNT: z.coerce.string().default("0.0001"),
+  BTC_TARGET_PROFIT_PCT: z.coerce.string().default("0.02"),
+  BTC_STRATEGY_ANCHOR_MODE: z.enum(["LAST_HIGH"]).default("LAST_HIGH"),
 
   /**
    * Protege todas as rotas JSON do dashboard (exceto `/health` e `/auth/*`) com JWT + 2FA por email.

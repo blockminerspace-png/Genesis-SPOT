@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { Env } from "../../config/env.js";
 import { getBotConfigView } from "../../modules/strategy/bot-config.service.js";
+import { buildRealOnlyOperationalStatus } from "../../modules/operational/real-only-status.service.js";
+import { getRuntimeStateService } from "../../modules/runtime/runtime-state.service.js";
 import {
   appendBotEvent,
   patchBotConfigRow,
@@ -12,11 +14,25 @@ import {
   postBotModeLiveBodySchema,
 } from "../../modules/strategy/bot-config.schema.js";
 import type { Prisma } from "@prisma/client";
+import {
+  RESET_TRADING_DATA_CONFIRM,
+  resetAllTradingData,
+} from "../../modules/admin/trading-data-reset.service.js";
 
 export async function botRoutes(app: FastifyInstance, env: Env) {
   app.get("/config", async (_request, reply) => {
     const body = await getBotConfigView(env);
     return reply.send(body);
+  });
+
+  app.get("/operational-status", async (_request, reply) => {
+    const row = await getRuntimeStateService().getBotConfigRow();
+    const operational = buildRealOnlyOperationalStatus(env, {
+      runtimeStatus: row.runtimeStatus,
+      executionMode: row.executionMode,
+      market: row.market,
+    });
+    return reply.send(operational);
   });
 
   app.patch("/config", async (request, reply) => {
@@ -142,6 +158,39 @@ export async function botRoutes(app: FastifyInstance, env: Env) {
       runtimeStatus: row?.runtimeStatus,
       executionMode: row?.executionMode,
       enabled: row?.enabled,
+    });
+  });
+
+  app.post("/reset-trading-data", async (request, reply) => {
+    const body = (request.body ?? {}) as {
+      confirm?: string;
+      bootstrapBuy?: boolean;
+      stopMotor?: boolean;
+    };
+    if (body.confirm !== RESET_TRADING_DATA_CONFIRM) {
+      return reply.code(400).send({
+        ok: false,
+        error: `Confirmação obrigatória: envie { "confirm": "${RESET_TRADING_DATA_CONFIRM}" }`,
+      });
+    }
+
+    const result = await resetAllTradingData(env, request.log, {
+      bootstrapBuy: body.bootstrapBuy,
+      stopMotor: body.stopMotor,
+    });
+    const { bootstrap, ...counts } = result;
+    const bootMsg =
+      bootstrap?.attempted && bootstrap.ok
+        ? " Compra inicial a mercado enviada."
+        : bootstrap?.attempted && !bootstrap.ok
+          ? ` Compra inicial não executada: ${bootstrap.message}`
+          : "";
+    const motorMsg = body.stopMotor ? " Motor desligado (OFF)." : " Motor mantido.";
+    return reply.send({
+      ok: true,
+      message: `Histórico apagado.${bootMsg}${motorMsg}`,
+      counts,
+      bootstrap,
     });
   });
 }

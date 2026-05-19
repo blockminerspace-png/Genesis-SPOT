@@ -25,8 +25,16 @@ function isLiveCoinexOrderId(exchangeOrderId: string | null): boolean {
 
 let timer: NodeJS.Timeout | undefined;
 
-/** Último snapshot USDT (available|frozen) para deteção heurística de drift entre ticks. */
-let lastUsdtSpotSnap: string | undefined;
+/** Snapshot estável USDC+USDT (disponível|bloqueado) — drift com ordens LIVE abertas. */
+let lastStableQuoteSpotSnap: string | undefined;
+
+function stableQuoteSpotFingerprint(balances: { asset: string; available: string; frozen: string }[]): string {
+  const seg = (sym: string) => {
+    const b = balances.find((x) => x.asset === sym);
+    return `${sym}:${b?.available ?? "0"}|${b?.frozen ?? "0"}`;
+  };
+  return `${seg("USDC")};${seg("USDT")}`;
+}
 
 const defaultSummary = (): LiveReconciliationSummary => ({
   intervalMs: 10_000,
@@ -335,16 +343,15 @@ export async function runLiveOrderReconciliationTick(env: Env, log: FastifyBaseL
   let balanceDrift = false;
   try {
     const { balances } = await prov.fetchSpotBalances();
-    const usdt = balances.find((b) => b.asset === "USDT");
-    const snap = `${usdt?.available ?? "0"}|${usdt?.frozen ?? "0"}`;
-    if (lastUsdtSpotSnap !== undefined && lastUsdtSpotSnap !== snap && livePending.length > 0) {
+    const snap = stableQuoteSpotFingerprint(balances);
+    if (lastStableQuoteSpotSnap !== undefined && lastStableQuoteSpotSnap !== snap && livePending.length > 0) {
       balanceDrift = true;
-      await appendBotEvent("WARN", "BALANCE_DRIFT_DETECTED", "Saldo USDT spot mudou entre ticks com ordens LIVE abertas", {
-        previous: lastUsdtSpotSnap,
+      await appendBotEvent("WARN", "BALANCE_DRIFT_DETECTED", "Saldo USDC/USDT spot mudou entre ticks com ordens LIVE abertas", {
+        previous: lastStableQuoteSpotSnap,
         current: snap,
       });
     }
-    lastUsdtSpotSnap = snap;
+    lastStableQuoteSpotSnap = snap;
   } catch {
     /* ignore balance drift probe */
   }
@@ -368,7 +375,7 @@ export async function runLiveOrderReconciliationTick(env: Env, log: FastifyBaseL
   if (balanceDrift) {
     summary.fillSumDriftDetected = summary.fillSumDriftDetected || balanceDrift;
     if (!summary.fillSumDriftDetail) {
-      summary.fillSumDriftDetail = "USDT spot mudou (ver BALANCE_DRIFT_DETECTED nos eventos)";
+      summary.fillSumDriftDetail = "Saldo USDC/USDT spot mudou (ver BALANCE_DRIFT_DETECTED nos eventos)";
     }
   }
 }

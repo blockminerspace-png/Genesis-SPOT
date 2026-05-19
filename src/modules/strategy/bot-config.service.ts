@@ -21,7 +21,7 @@ export async function ensureBotConfigFromEnv(env: Env) {
   return prisma.botConfig.create({
     data: {
       market: env.BOT_MARKET,
-      quoteCurrency: "USDT",
+      quoteCurrency: "USDC",
       baseCurrency: "BTC",
       enabled: computeEnabledForRuntimeStatus(runtimeStatus),
       runtimeStatus,
@@ -78,6 +78,12 @@ export async function getBotConfigView(env: Env) {
       liveExecution,
       nodeEnv: env.NODE_ENV,
       coinexConfigured: keys,
+      enableAutoLiveWorker: env.ENABLE_AUTO_LIVE_WORKER,
+      autoLiveConfirmEnvSet: Boolean(env.AUTO_LIVE_CONFIRM_ENV?.trim()),
+      autoLiveConfirmOk: env.AUTO_LIVE_CONFIRM_ENV === "I_UNDERSTAND_THIS_BOT_CAN_TRADE_REAL_MONEY",
+      btcStrategyEnabled: env.BTC_STRATEGY_ENABLED,
+      btcStrategyMarket: env.BTC_STRATEGY_MARKET,
+      genesisMode: "REAL_ONLY" as const,
       pricePollIntervalMs: env.BOT_PRICE_POLL_INTERVAL_MS,
       reconciliationIntervalMs: env.BOT_RECONCILIATION_INTERVAL_MS,
     },

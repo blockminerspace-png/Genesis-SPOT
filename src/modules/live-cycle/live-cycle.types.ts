@@ -29,6 +29,8 @@ export type LiveCycleApiSummary = LiveCycleSummary & {
   runtimeStatus: string;
   executionMode: string;
   market: string;
+  /** Pares operados pelo Auto LIVE neste tick (CSV do allowlist ou AUTO_LIVE_MARKET). */
+  activeMarkets: string[];
   quoteValue: string;
   /** Lucro-alvo na venda: lido de `bot_configs` (Parâmetros), não do `.env`. */
   targetProfitPct: string;
@@ -38,6 +40,17 @@ export type LiveCycleApiSummary = LiveCycleSummary & {
   quoteCurrency: string;
   /** Último preço (floor ao tick do spec) usado como base da grelha na queda. */
   referenceLastPrice: string | null;
-  /** Preços de referência abaixo do último (1.º…N.º degrau = passo da grelha); ilustrativo — Auto LIVE compra ao mercado. */
+  /** Preços de referência abaixo do pico (degraus da grelha); compra quando último ≤ gatilho do 1.º degrau. */
   dropBuyReferencePrices: string[];
+  /** Estratégia BTC Drop 2K ativa no `.env`. */
+  btcStrategyEnabled: boolean;
+  btcDropState: {
+    anchorPrice: string | null;
+    nextBuyPrice: string | null;
+    stepUsdt: string;
+    baseAmount: string;
+    targetProfitPct: string;
+    estimatedQuoteValueAtNextBuy: string | null;
+    updatedAt: string | null;
+  } | null;
 };

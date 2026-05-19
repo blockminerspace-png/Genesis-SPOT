@@ -44,7 +44,7 @@ export async function runLivePlacePrecheck(
   log: FastifyBaseLogger,
   p: RuntimePermission,
   input: { market: string; side: "BUY" | "SELL"; amount: string; price: string },
-  options?: { maxQuotePerOrder?: string; skipMakerOnlyHint?: boolean },
+  options?: { maxQuotePerOrder?: string; skipMakerOnlyHint?: boolean; skipMarketAllowlist?: boolean },
 ): Promise<LivePlacePrecheckResult> {
   const checks: LivePrecheckCheck[] = [];
   const market = input.market.toUpperCase();
@@ -68,7 +68,7 @@ export async function runLivePlacePrecheck(
   }
 
   const allow = parseAllowlist(env);
-  if (!push(checks, "market_allowlist", allow.includes(market), allow.join(","))) {
+  if (!push(checks, "market_allowlist", options?.skipMarketAllowlist || allow.includes(market), allow.join(","))) {
     return { valid: false, checks, flooredAmount: "", flooredPrice: "", quoteValue: "", error: "mercado fora da allowlist" };
   }
 
@@ -79,7 +79,18 @@ export async function runLivePlacePrecheck(
       flooredAmount: "",
       flooredPrice: "",
       quoteValue: "",
-      error: "MARKET_DATA_SOURCE deve ser COINEX para ordens LIVE",
+      error: "Genesis SPOT exige MARKET_DATA_SOURCE=COINEX",
+    };
+  }
+
+  if (!push(checks, "portfolio_balance_source_coinex", env.PORTFOLIO_BALANCE_SOURCE === "COINEX")) {
+    return {
+      valid: false,
+      checks,
+      flooredAmount: "",
+      flooredPrice: "",
+      quoteValue: "",
+      error: "Genesis SPOT exige saldo real CoinEx (PORTFOLIO_BALANCE_SOURCE=COINEX)",
     };
   }
 
