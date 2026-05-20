@@ -29,6 +29,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
   /** SPA: mesmo bundle React para o ecrã de login. */
   app.get("/login", async (_request, reply) => sendDashboardIndex(reply));
 
+  /** SPA: rotas client-side do Bot Spot (não confundir com JSON em /bot-spot/state, etc.). */
+  app.get("/bot-spot", async (_request, reply) => sendDashboardIndex(reply));
+  app.get("/bot-spot/*", async (_request, reply) => sendDashboardIndex(reply));
+
   await app.register(fastifyStatic, {
     root: path.join(dashboardRoot(), "dash-assets"),
     prefix: "/dash-assets/",

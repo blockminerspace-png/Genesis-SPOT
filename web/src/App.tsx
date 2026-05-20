@@ -231,6 +231,12 @@ export default function DashboardApp() {
   const [eventFilter, setEventFilter] = useState("all");
   const { toast, show } = useToast();
 
+  useEffect(() => {
+    if (location.pathname === "/legacy" || location.pathname.startsWith("/legacy/")) {
+      navigate("/", { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   const loadAll = useCallback(async () => {
     const paths: [string, keyof Omit<DataBag, "ticker" | "specInfo">][] = [
       ["/health", "health"],
