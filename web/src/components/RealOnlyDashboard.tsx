@@ -25,7 +25,6 @@ type Props = {
   btcDrop: BtcDropPanelSnapshot | null;
   openOrders: number;
   openCycles: number;
-  marketTickers: Record<string, Record<string, unknown>>;
   cSum: Record<string, unknown> | null;
   cyclesRecent: unknown[] | undefined;
 };
@@ -36,27 +35,22 @@ function parsePrice(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function MarketPriceCard({
-  market,
-  snap,
-  active,
-}: {
-  market: string;
-  snap: Record<string, unknown> | undefined;
-  active: boolean;
-}) {
-  const last = parsePrice(snap?.last);
-  const { base, quote } = parseSpotMarketPair(market);
-  return (
-    <div className={`ov-mkt-card ${active ? "ov-mkt-card--active" : ""}`}>
-      <div className="ov-mkt-card-head">
-        <span className="ov-mkt-pair mono">{base}</span>
-        <span className="ov-mkt-quote muted">/{quote}</span>
+function WalletCard({ asset, bal }: { asset: string; bal: ReturnType<typeof pickAsset> }) {
+  if (!bal) {
+    return (
+      <div className="ov-wallet-card">
+        <span className="ov-wallet-asset mono">{asset}</span>
+        <p className="ov-wallet-main muted">—</p>
       </div>
-      <p className="ov-mkt-price mono">
-        {last != null ? last.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : "—"}
+    );
+  }
+  return (
+    <div className="ov-wallet-card">
+      <span className="ov-wallet-asset mono">{asset}</span>
+      <p className="ov-wallet-main mono">{bal.available}</p>
+      <p className="ov-wallet-sub muted tiny">
+        bloq. {bal.frozen} · total {bal.total}
       </p>
-      <p className="ov-mkt-meta muted tiny">{snap?.priceSource ? priceSourceLabel(snap.priceSource) : "—"}</p>
     </div>
   );
 }
@@ -153,7 +147,6 @@ export function RealOnlyDashboard({
   btcDrop,
   openOrders,
   openCycles,
-  marketTickers,
   cSum,
   cyclesRecent,
 }: Props) {
@@ -190,6 +183,7 @@ export function RealOnlyDashboard({
     }
     return [market.toUpperCase()];
   }, [liveCycle?.activeMarkets, market]);
+  const marketsLabel = tradingMarkets.join(", ");
 
   const totalCycles = Number((cSum as { totalCycles?: number })?.totalCycles ?? 0);
   const closedProfit = Number((cSum as { byStatus?: Record<string, number> })?.byStatus?.CLOSED_PROFIT ?? 0);
@@ -220,6 +214,7 @@ export function RealOnlyDashboard({
             <p className="muted small">
               {priceSourceLabel(ticker?.priceSource)}
               {ticker?.updatedAt ? ` · ${new Date(String(ticker.updatedAt)).toLocaleTimeString("pt-BR")}` : ""}
+              {marketsLabel ? ` · Mercados: ${marketsLabel}` : ""}
             </p>
           </div>
           <div className="ov-hero-side">
@@ -232,15 +227,6 @@ export function RealOnlyDashboard({
               <span className="ov-chip">{openOrders} ordem(ns) aberta(s)</span>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className="ov-section">
-        <h2 className="ov-section-title">Mercado em operação</h2>
-        <div className="ov-market-grid">
-          {tradingMarkets.map((m) => (
-            <MarketPriceCard key={m} market={m} snap={marketTickers[m]} active={m === market.toUpperCase()} />
-          ))}
         </div>
       </section>
 
@@ -265,9 +251,9 @@ export function RealOnlyDashboard({
 
         <div className="panel ov-panel-balances">
           <h2 className="panel-title">Carteira CoinEx</h2>
-          <div className="kv-grid">
-            <KvNum label={quote} value={fmtBalLine(quoteBal)} mono={false} />
-            <KvNum label={base} value={fmtBalLine(baseBal)} mono={false} />
+          <div className="ov-wallet-grid">
+            <WalletCard asset={quote} bal={quoteBal} />
+            <WalletCard asset={base} bal={baseBal} />
           </div>
           {liveCycle?.lastDecision ? (
             <p className="muted small" style={{ marginTop: 12 }}>

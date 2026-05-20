@@ -57,19 +57,25 @@ export function HyperliquidChartPanel() {
       series.createPriceLine({ price: lines.targetSellPrice, color: "#a371f7", title: "Alvo venda", lineWidth: 2 });
     }
 
-    const markerData: SeriesMarker<UTCTimestamp>[] = chart.markers.map((m) => {
-      const side = String((m as { side?: string }).side ?? "BUY");
-      const price = Number((m as { price?: number }).price ?? 0);
-      const qty = Number((m as { qty?: number }).qty ?? 0);
-      const time = toSec(Number((m as { time?: number }).time ?? 0));
-      return {
-        time,
-        position: side === "BUY" ? "belowBar" : "aboveBar",
-        shape: side === "BUY" ? "arrowUp" : "arrowDown",
-        color: side === "BUY" ? "#3fb950" : "#f85149",
-        text: `${side} ${qty} @ ${price}`,
-      } as SeriesMarker<UTCTimestamp>;
-    });
+    const markerData: SeriesMarker<UTCTimestamp>[] = chart.markers
+      .map((m) => {
+        const side = String((m as { side?: string }).side ?? "");
+        const price = Number((m as { price?: number }).price);
+        const qty = Number((m as { qty?: number }).qty);
+        const time = toSec(Number((m as { time?: number }).time));
+        if (side !== "BUY" && side !== "SELL") return null;
+        if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(time)) {
+          return null;
+        }
+        return {
+          time,
+          position: side === "BUY" ? "belowBar" : "aboveBar",
+          shape: side === "BUY" ? "arrowUp" : "arrowDown",
+          color: side === "BUY" ? "#3fb950" : "#f85149",
+          text: `${side} ${qty} @ ${price}`,
+        } as SeriesMarker<UTCTimestamp>;
+      })
+      .filter((m): m is SeriesMarker<UTCTimestamp> => m != null);
 
     if (markerData.length > 0) {
       createSeriesMarkers(series, markerData);

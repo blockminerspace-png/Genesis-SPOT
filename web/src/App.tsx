@@ -669,11 +669,9 @@ export default function DashboardApp() {
           </div>
           {cfg && rt ? (
             <RealOnlyHeader
-              runtimeStatus={rt.runtimeStatus}
               executionLayer={rt.executionLayer}
               liveTradingEnabled={Boolean(rt.enableLiveTrading)}
               autoWorkerOn={Boolean(rt.enableAutoLiveWorker)}
-              killSwitch={String(rt.runtimeStatus) === "KILL_SWITCH"}
             />
           ) : null}
         </div>
@@ -710,7 +708,6 @@ export default function DashboardApp() {
               btcDrop={btcDropSnapshot}
               openOrders={openOrders}
               openCycles={Number((data.cSum as { openCycles?: number })?.openCycles ?? 0)}
-              marketTickers={data.marketTickers ?? {}}
               cSum={data.cSum}
               cyclesRecent={data.cRecent?.items as unknown[] | undefined}
             />
