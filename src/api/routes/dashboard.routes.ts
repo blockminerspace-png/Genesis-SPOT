@@ -1,27 +1,10 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
+import { sendDashboardIndex } from "../dashboard-html.js";
 
 const publicRoot = () => path.join(process.cwd(), "public");
 const dashboardRoot = () => path.join(publicRoot(), "dashboard");
-
-async function sendDashboardIndex(reply: FastifyReply) {
-  try {
-    const html = await readFile(path.join(dashboardRoot(), "index.html"), "utf8");
-    return reply
-      .header("Cache-Control", "no-store, max-age=0")
-      .type("text/html; charset=utf-8")
-      .send(html);
-  } catch {
-    return reply
-      .code(503)
-      .type("text/html; charset=utf-8")
-      .send(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Genesis SPOT</title></head><body><p>Dashboard não compilado. Corre <code>npm run build</code> ou <code>vite build --config web/vite.config.ts</code>.</p></body></html>",
-      );
-  }
-}
 
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get("/", async (_request, reply) => sendDashboardIndex(reply));
@@ -29,9 +12,13 @@ export async function dashboardRoutes(app: FastifyInstance) {
   /** SPA: mesmo bundle React para o ecrã de login. */
   app.get("/login", async (_request, reply) => sendDashboardIndex(reply));
 
-  /** SPA: rotas client-side do Bot Spot (não confundir com JSON em /bot-spot/state, etc.). */
+  /** SPA: índice Bot Spot (subpaths partilham URL com API — HTML via negociação em bot-spot.routes). */
   app.get("/bot-spot", async (_request, reply) => sendDashboardIndex(reply));
-  app.get("/bot-spot/*", async (_request, reply) => sendDashboardIndex(reply));
+  app.get("/bot-spot/settings", async (_request, reply) => sendDashboardIndex(reply));
+  app.get("/bot-spot/debug", async (_request, reply) => sendDashboardIndex(reply));
+
+  app.get("/legacy", async (_request, reply) => sendDashboardIndex(reply));
+  app.get("/legacy/*", async (_request, reply) => sendDashboardIndex(reply));
 
   await app.register(fastifyStatic, {
     root: path.join(dashboardRoot(), "dash-assets"),
