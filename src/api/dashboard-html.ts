@@ -4,6 +4,12 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 const dashboardIndexPath = () => path.join(process.cwd(), "public", "dashboard", "index.html");
 
+/** Rotas React do Bot Spot (shell HTML; JSON fica em /state, /events, etc.). */
+export function isBotSpotSpaShellPath(pathname: string): boolean {
+  if (pathname === "/bot-spot") return true;
+  return /^\/bot-spot\/(chart|cycles|orders|settings|debug)$/.test(pathname);
+}
+
 export function requestWantsDashboardHtml(request: FastifyRequest): boolean {
   const dest = request.headers["sec-fetch-dest"];
   if (dest === "document") return true;

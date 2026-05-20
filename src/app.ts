@@ -19,6 +19,7 @@ import { btcDropRoutes } from "./api/routes/btc-drop.routes.js";
 import { botSpotRoutes } from "./api/routes/bot-spot.routes.js";
 import { dashboardRoutes } from "./api/routes/dashboard.routes.js";
 import { isDashboardAuthEnabled } from "./modules/auth/dashboard-auth.service.js";
+import { isBotSpotSpaShellPath, requestWantsDashboardHtml } from "./api/dashboard-html.js";
 
 async function registerApiRoutes(instance: FastifyInstance, env: Env) {
   await instance.register(async (i) => botRoutes(i, env), { prefix: "/bot" });
@@ -79,12 +80,18 @@ export async function buildApp(env: Env) {
   if (authOn) {
     await app.register(async (protectedScope) => {
       protectedScope.addHook("onRequest", async (request, reply) => {
-        if (env.DASHBOARD_BLOCK_DOCUMENT_NAV) {
+        const pathOnly = (request.url ?? "").split("?")[0] ?? "";
+        const botSpotShell =
+          isBotSpotSpaShellPath(pathOnly) && requestWantsDashboardHtml(request);
+
+        if (env.DASHBOARD_BLOCK_DOCUMENT_NAV && !botSpotShell) {
           const dest = request.headers["sec-fetch-dest"];
           if (dest === "document") {
             return reply.code(403).send({ error: "browser_document_fetch_forbidden" });
           }
         }
+        if (botSpotShell) return;
+
         try {
           await request.jwtVerify();
         } catch {
