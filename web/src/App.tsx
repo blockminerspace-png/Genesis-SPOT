@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { BotSpotSection } from "./features/bot-spot/BotSpotRoutes.js";
+import { useLocation, useNavigate } from "react-router-dom";
+import { BtcDropEnvReadonly } from "./features/bot-spot/components/BtcDropEnvReadonly.js";
+import { BotSpotErrorsPanel } from "./features/bot-spot/components/BotSpotErrorsPanel.js";
+import { BotSpotRuntimeControls } from "./features/bot-spot/components/BotSpotRuntimeControls.js";
+import { BotSpotTechnicalEvents } from "./features/bot-spot/components/BotSpotTechnicalEvents.js";
+import { HyperliquidChartPanel } from "./features/bot-spot/components/HyperliquidChartPanel.js";
+import { useBotSpotState } from "./features/bot-spot/hooks/useBotSpotState.js";
+import { CyclesOrdersApiTables } from "./components/CyclesOrdersApiTables.js";
 import { useAuth } from "./auth/AuthContext.js";
 import { apiGet, apiPatch, apiPost, apiPostLogout } from "./lib/api.js";
 import { useToast } from "./hooks/useToast.js";
@@ -42,7 +48,7 @@ import { OperationalChecksPanel } from "./components/OperationalChecksPanel.js";
 import { RealOnlyHeader } from "./components/RealOnlyHeader.js";
 import { BrandLogo } from "./components/BrandLogo.js";
 
-type TabId = "overview" | "operation" | "market" | "fullauto" | "params" | "cycles" | "reconc" | "events";
+type TabId = "overview" | "operation" | "market" | "fullauto" | "params" | "cycles" | "reconc" | "events" | "grafico";
 
 const PCT_FORM_KEYS = new Set(["targetProfitPct", "gridStepPct", "feeBufferPct"]);
 
@@ -222,7 +228,7 @@ export default function DashboardApp() {
   const { loading, authRequired, session, invalidateSession } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const isBotSpot = location.pathname === "/bot-spot" || location.pathname.startsWith("/bot-spot/");
+  const { state: botSpotState, refresh: refreshBotSpot } = useBotSpotState(5000);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [data, setData] = useState<DataBag | null>(null);
   const [healthOk, setHealthOk] = useState<"good" | "warn" | "danger">("good");
@@ -232,7 +238,13 @@ export default function DashboardApp() {
   const { toast, show } = useToast();
 
   useEffect(() => {
-    if (location.pathname === "/legacy" || location.pathname.startsWith("/legacy/")) {
+    const p = location.pathname;
+    if (
+      p === "/legacy" ||
+      p.startsWith("/legacy/") ||
+      p === "/bot-spot" ||
+      p.startsWith("/bot-spot/")
+    ) {
       navigate("/", { replace: true });
     }
   }, [location.pathname, navigate]);
@@ -581,6 +593,7 @@ export default function DashboardApp() {
     { id: "cycles", label: "Ciclos & ordens" },
     { id: "reconc", label: "Conciliação" },
     { id: "events", label: "Eventos" },
+    { id: "grafico", label: "Gráfico" },
   ];
 
   const fullCardClass = data?.liveCycle
@@ -643,12 +656,6 @@ export default function DashboardApp() {
               <button type="button" className="btn btn-primary" onClick={() => void loadAll()}>
                 Atualizar
               </button>
-              <NavLink
-                to="/bot-spot"
-                className={({ isActive }) => `btn ghost${isActive ? " btn-nav-active" : ""}`}
-              >
-                Bot Spot
-              </NavLink>
               {authRequired ? (
                 <button type="button" className="btn ghost" onClick={() => void logout()}>
                   Sair
@@ -673,10 +680,6 @@ export default function DashboardApp() {
       </header>
 
       <main className="site-main">
-        {isBotSpot ? (
-          <BotSpotSection />
-        ) : (
-          <>
         <nav className="tabs" role="tablist" aria-label="Secções do painel">
           {tabs.map((t) => (
             <button
@@ -694,6 +697,7 @@ export default function DashboardApp() {
 
         {activeTab === "overview" && data && cfg && rt && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
+            <BotSpotErrorsPanel errors={botSpotState?.errors ?? []} />
             <RealOnlyDashboard
               cfg={cfg}
               rt={rt}
@@ -942,6 +946,22 @@ export default function DashboardApp() {
 
         {activeTab === "params" && data && cfg && rt && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
+            <BtcDropEnvReadonly state={botSpotState} />
+            <div className="panel panel-nested">
+              <h3 className="ov-subtitle">Worker automático (.env do servidor)</h3>
+              <div className="kv-grid">
+                <KvNum label="ENABLE_AUTO_LIVE_WORKER" value={rt.enableAutoLiveWorker ? "true" : "false"} mono />
+                <KvNum
+                  label="AUTO_LIVE_CONFIRM_ENV"
+                  value={
+                    (data.operational as { autoLive?: { autoLiveConfirmOk?: boolean } } | null)?.autoLive?.autoLiveConfirmOk
+                      ? "confirmado"
+                      : "não confirmado"
+                  }
+                  mono
+                />
+              </div>
+            </div>
             <div className="panel">
               <div className="panel-head">
                 <h2 className="panel-title">Parâmetros do bot</h2>
@@ -1100,11 +1120,16 @@ export default function DashboardApp() {
                 </div>
               </div>
             </div>
+            <div className="panel panel-nested" style={{ marginTop: 16 }}>
+              <h3 className="ov-subtitle">Listagem consolidada (API)</h3>
+              <CyclesOrdersApiTables />
+            </div>
           </section>
         )}
 
         {activeTab === "reconc" && data && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
+            <BotSpotRuntimeControls state={botSpotState} onRefresh={refreshBotSpot} />
             <div className="panel">
               <h2 className="panel-title">Conciliação com a CoinEx</h2>
               <p className="muted small">
@@ -1150,6 +1175,12 @@ export default function DashboardApp() {
           </section>
         )}
 
+        {activeTab === "grafico" && (
+          <section className="tab-panel tab-panel-active" role="tabpanel">
+            <HyperliquidChartPanel />
+          </section>
+        )}
+
         {activeTab === "events" && data && (
           <section className="tab-panel tab-panel-active" role="tabpanel">
             <div className="panel">
@@ -1189,9 +1220,11 @@ export default function DashboardApp() {
                 )}
               </ul>
             </div>
+            <div className="panel panel-nested" style={{ marginTop: 16 }}>
+              <h3 className="ov-subtitle">Eventos técnicos (API consolidada)</h3>
+              <BotSpotTechnicalEvents />
+            </div>
           </section>
-        )}
-          </>
         )}
       </main>
 

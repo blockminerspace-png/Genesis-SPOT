@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Env } from "../../config/env.js";
-import { requestWantsDashboardHtml, sendDashboardIndex } from "../dashboard-html.js";
+import { requestWantsDashboardHtml } from "../dashboard-html.js";
 import { readBtcDropConfig } from "../../modules/strategy/btc-drop.types.js";
 import {
   getBotSpotChart,
@@ -34,7 +34,7 @@ export async function botSpotRoutes(app: FastifyInstance, env: Env) {
   });
 
   app.get("/chart", async (req, reply) => {
-    if (requestWantsDashboardHtml(req)) return sendDashboardIndex(reply);
+    if (requestWantsDashboardHtml(req)) return reply.redirect("/");
     const q = chartQuery.parse(req.query);
     const market = (q.market ?? defaultMarket()).toUpperCase();
     const toMs = q.to ?? Date.now();
@@ -49,14 +49,14 @@ export async function botSpotRoutes(app: FastifyInstance, env: Env) {
   });
 
   app.get("/cycles", async (req, reply) => {
-    if (requestWantsDashboardHtml(req)) return sendDashboardIndex(reply);
+    if (requestWantsDashboardHtml(req)) return reply.redirect("/");
     const q = marketQuery.parse(req.query);
     const market = (q.market ?? defaultMarket()).toUpperCase();
     return reply.send({ market, cycles: await listBotSpotCycles(market) });
   });
 
   app.get("/orders", async (req, reply) => {
-    if (requestWantsDashboardHtml(req)) return sendDashboardIndex(reply);
+    if (requestWantsDashboardHtml(req)) return reply.redirect("/");
     const q = marketQuery.parse(req.query);
     const market = (q.market ?? defaultMarket()).toUpperCase();
     return reply.send({ market, orders: await listBotSpotOrders(market) });

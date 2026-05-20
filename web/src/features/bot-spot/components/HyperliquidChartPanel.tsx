@@ -13,7 +13,7 @@ function toSec(ms: number): UTCTimestamp {
   return (ms > 1e12 ? Math.floor(ms / 1000) : ms) as UTCTimestamp;
 }
 
-export function BotSpotChartView() {
+export function HyperliquidChartPanel() {
   const { chart, loading, error, refresh } = useBotSpotChart("15m");
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -86,12 +86,12 @@ export function BotSpotChartView() {
     };
   }, [chart]);
 
-  if (loading) return <p className="bs-muted">Carregando candles Hyperliquid…</p>;
+  if (loading) return <p className="muted">Carregando candles Hyperliquid…</p>;
   if (error && (!chart || chart.candles.length === 0)) {
     return (
-      <div className="bs-empty">
-        <p>{error}</p>
-        <button type="button" onClick={() => void refresh()}>
+      <div className="panel">
+        <p className="muted">{error}</p>
+        <button type="button" className="btn" onClick={() => void refresh()}>
           Tentar novamente
         </button>
       </div>
@@ -99,11 +99,12 @@ export function BotSpotChartView() {
   }
 
   return (
-    <div className="bs-chart-wrap">
-      <p className="bs-muted">
-        Candles Hyperliquid ({chart?.market}) — marcadores de fills reais CoinEx
+    <div className="panel">
+      <h2 className="panel-title">Gráfico BTC (Hyperliquid)</h2>
+      <p className="muted small">
+        Candles reais via backend · marcadores BUY/SELL de fills persistidos na CoinEx
       </p>
-      <div ref={containerRef} className="bs-chart" />
+      <div ref={containerRef} className="hl-chart" />
     </div>
   );
 }
